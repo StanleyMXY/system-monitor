@@ -1,6 +1,7 @@
 # engine/models.py
 # 监控系统核心数据结构：Monitor 层输出 MetricResult，RuleEngine 输出 RuleResult
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass
@@ -14,8 +15,8 @@ class MetricResult:
 
 @dataclass
 class RuleResult:
-    level: str           # "ok" | "warning" | "critical"
-    action: str          # "none" | "alert" | "enqueue"
+    level: Literal["ok", "warning", "critical"]
+    action: Literal["none", "alert", "enqueue"]
     metric: MetricResult
-    threshold: float     # 触发告警的阈值
-    message: str         # 人可读的告警描述
+    threshold: float
+    message: str

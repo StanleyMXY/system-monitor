@@ -1,0 +1,16 @@
+{
+  "_comment": "时间单位: 小时，数量单位: 条",
+  "alert": {
+    "high_risk_pending_warning": 10,
+    "high_risk_timeout_hours": 2,
+    "check_interval_minutes": 10
+  },
+  "event": {
+    "high_risk_pending_warning": 5,
+    "check_interval_minutes": 10
+  },
+  "blacklist": {
+    "expiry_reminder_hours": 24,
+    "check_interval_minutes": 60
+  }
+}

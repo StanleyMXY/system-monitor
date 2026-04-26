@@ -1,0 +1,15 @@
+{
+  "_comment": "时间单位: 小时，金额单位: 元，数量单位: 次",
+  "vip_adjust": {
+    "batch_count_per_hour_warning": 20,
+    "check_interval_minutes": 60
+  },
+  "balance_adjustment": {
+    "large_amount_threshold": 10000,
+    "check_interval_minutes": 0
+  },
+  "config_change": {
+    "change_count_per_hour_warning": 10,
+    "check_interval_minutes": 60
+  }
+}

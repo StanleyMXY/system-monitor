@@ -1,0 +1,13 @@
+{
+  "_comment": "比率单位: 0-1，金额单位: 元，时间单位: 分钟",
+  "balance_transfer": {
+    "fail_rate_warning": 0.05,
+    "retry_count_warning": 3,
+    "retry_order_count_warning": 5,
+    "check_interval_minutes": 10
+  },
+  "reconciliation": {
+    "diff_consecutive_days_critical": 2,
+    "diff_amount_warning": 100
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "_comment": "金额单位: 元，时间单位: 分钟，比率单位: 0-1",
+  "recharge": {
+    "success_rate_warning": 0.80,
+    "success_rate_critical": 0.60,
+    "timeout_rate_warning": 0.10,
+    "pending_timeout_minutes": 30,
+    "pending_count_warning": 20,
+    "check_interval_minutes": 5
+  },
+  "withdraw": {
+    "queue_timeout_hours": 4,
+    "queue_count_warning": 50,
+    "fail_rate_warning": 0.20,
+    "large_amount_threshold": 50000,
+    "check_interval_minutes": 15,
+    "fail_rate_interval_minutes": 60
+  },
+  "channel_account": {
+    "balance_warning_amount": 10000,
+    "check_interval_minutes": 15
+  }
+}

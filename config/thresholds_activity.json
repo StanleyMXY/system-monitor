@@ -1,0 +1,13 @@
+{
+  "_comment": "比率单位: 0-1，数量单位: 条，时间单位: 分钟",
+  "redemption": {
+    "fail_rate_warning": 0.05,
+    "retry_count_warning": 3,
+    "retry_order_count_warning": 10,
+    "check_interval_minutes": 15
+  },
+  "first_deposit": {
+    "fail_alert_threshold": 1,
+    "check_interval_minutes": 5
+  }
+}

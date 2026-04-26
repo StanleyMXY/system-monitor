@@ -1,0 +1,13 @@
+{
+  "_comment": "比率单位: 0-1，时间单位: 小时",
+  "flow_requirement": {
+    "expiry_hours": 24,
+    "low_completion_rate": 0.10,
+    "count_warning": 20,
+    "check_interval_minutes": 60
+  },
+  "frozen_balance": {
+    "growth_rate_warning": 0.50,
+    "check_interval_minutes": 60
+  }
+}

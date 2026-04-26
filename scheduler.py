@@ -40,42 +40,49 @@ def _run_monitor(check_fn):
     for result in rule_results:
         if result.level == "ok":
             continue
-        handle(result)
-        if result.action == "enqueue":
-            enqueue_action(
-                domain=result.metric.domain,
-                action_type="switch_channel",
-                target_id=str(result.metric.channel_id) if result.metric.channel_id else None,
-                payload={
-                    "metric": result.metric.metric,
-                    "value": result.metric.value,
-                    "extra": result.metric.extra,
-                },
-                priority=1 if result.level == "critical" else 2,
-                triggered_by=result.message,
-                metric_value=result.metric.value,
-                threshold=result.threshold,
-            )
+        try:
+            handle(result)
+            if result.action == "enqueue":
+                enqueue_action(
+                    domain=result.metric.domain,
+                    action_type="switch_channel",
+                    target_id=str(result.metric.channel_id) if result.metric.channel_id else None,
+                    payload={
+                        "metric": result.metric.metric,
+                        "value": result.metric.value,
+                        "extra": result.metric.extra,
+                    },
+                    priority=1 if result.level == "critical" else 2,
+                    triggered_by=result.message,
+                    metric_value=result.metric.value,
+                    threshold=result.threshold,
+                )
+        except Exception as exc:
+            logger.error(f"处理告警结果异常 [{result.metric.metric}]: {exc}", exc_info=True)
 
 
 async def job_check_recharge():
     logger.info("[payment] 执行充值监控")
-    await asyncio.get_event_loop().run_in_executor(None, _run_monitor, check_recharge)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, check_recharge)
 
 
 async def job_check_channel_balance():
     logger.info("[payment] 执行渠道账号余额监控")
-    await asyncio.get_event_loop().run_in_executor(None, _run_monitor, check_channel_balance)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, check_channel_balance)
 
 
 async def job_check_withdraw_queue():
     logger.info("[payment] 执行提现积压监控")
-    await asyncio.get_event_loop().run_in_executor(None, _run_monitor, check_withdraw_queue)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, check_withdraw_queue)
 
 
 async def job_check_withdraw_fail_rate():
     logger.info("[payment] 执行提现失败率监控")
-    await asyncio.get_event_loop().run_in_executor(None, _run_monitor, check_withdraw_fail_rate)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, check_withdraw_fail_rate)
 
 
 def _on_job_error(event):
@@ -113,10 +120,12 @@ def main():
         id="payment_withdraw_fail_rate",
     )
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     scheduler.start()
     logger.info("监控调度器已启动，Ctrl+C 退出")
     try:
-        asyncio.get_event_loop().run_forever()
+        loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
         logger.info("调度器已停止")

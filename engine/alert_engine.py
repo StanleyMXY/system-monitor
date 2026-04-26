@@ -8,10 +8,6 @@ from pathlib import Path
 from engine.models import RuleResult
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 
 ALERT_LOG_PATH = Path(__file__).parent.parent / "logs" / "alerts.log"
 

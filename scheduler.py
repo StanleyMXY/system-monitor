@@ -96,28 +96,32 @@ def main():
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
 
     scheduler.add_job(
-        lambda: asyncio.ensure_future(job_check_recharge()),
+        job_check_recharge,
         "interval",
         minutes=payment_cfg["recharge"]["check_interval_minutes"],
         id="payment_recharge",
+        max_instances=1,
     )
     scheduler.add_job(
-        lambda: asyncio.ensure_future(job_check_channel_balance()),
+        job_check_channel_balance,
         "interval",
         minutes=payment_cfg["channel_account"]["check_interval_minutes"],
         id="payment_channel_balance",
+        max_instances=1,
     )
     scheduler.add_job(
-        lambda: asyncio.ensure_future(job_check_withdraw_queue()),
+        job_check_withdraw_queue,
         "interval",
         minutes=payment_cfg["withdraw"]["check_interval_minutes"],
         id="payment_withdraw_queue",
+        max_instances=1,
     )
     scheduler.add_job(
-        lambda: asyncio.ensure_future(job_check_withdraw_fail_rate()),
+        job_check_withdraw_fail_rate,
         "interval",
         minutes=payment_cfg["withdraw"]["fail_rate_interval_minutes"],
         id="payment_withdraw_fail_rate",
+        max_instances=1,
     )
 
     loop = asyncio.new_event_loop()

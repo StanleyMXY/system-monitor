@@ -4,8 +4,16 @@
 import json
 import logging
 import time
+from decimal import Decimal
 from pathlib import Path
 from engine.models import RuleResult
+
+
+class _SafeEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        return super().default(o)
 
 logger = logging.getLogger(__name__)
 
@@ -34,4 +42,4 @@ def handle(result: RuleResult) -> None:
 
     ALERT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(ALERT_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        f.write(json.dumps(entry, ensure_ascii=False, cls=_SafeEncoder) + "\n")

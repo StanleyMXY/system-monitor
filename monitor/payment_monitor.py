@@ -14,16 +14,18 @@ def check_recharge(conn, thresholds: dict) -> list[MetricResult]:
         cur.execute(
             """
             SELECT
-                pc.id                                        AS channel_id,
-                pc.name                                      AS channel_name,
+                pca.channel_id                               AS channel_id,
+                pc.channel_name                              AS channel_name,
                 COUNT(*)                                     AS total,
                 SUM(pr.status = 1)                          AS success,
                 SUM(pr.status = 3)                          AS timeout,
                 SUM(pr.status = 0 AND pr.created_at < %s)  AS pending_overdue
             FROM pay_recharge pr
-            JOIN pay_channel pc ON pc.id = pr.channel_id
+            JOIN pay_channel_account pca ON pca.id = pr.channel_account_id AND pca.is_deleted = 0
+            JOIN pay_channel pc ON pc.id = pca.channel_id AND pc.is_deleted = 0
             WHERE pr.created_at >= %s
-            GROUP BY pc.id, pc.name
+              AND pr.is_deleted = 0
+            GROUP BY pca.channel_id, pc.channel_name
             """,
             (cutoff, int(time.time()) - 3600),
         )
@@ -35,7 +37,7 @@ def check_recharge(conn, thresholds: dict) -> list[MetricResult]:
         if total == 0:
             continue
         ch_id = row["channel_id"]
-        ch_name = row["channel_name"]
+        ch_name = row["channel_name"] or f"渠道{ch_id}"
         extra = {"channel_name": ch_name, "order_count": total}
 
         results.append(MetricResult(
@@ -60,7 +62,7 @@ def check_channel_balance(conn, thresholds: dict) -> list[MetricResult]:
     """采集所有渠道账号余额。"""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id AS account_id, name AS account_name, balance FROM pay_channel_account"
+            "SELECT id AS account_id, name AS account_name, balance FROM pay_channel_account WHERE is_deleted = 0"
         )
         rows = cur.fetchall()
 
@@ -82,7 +84,7 @@ def check_withdraw_queue(conn, thresholds: dict) -> list[MetricResult]:
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) AS overdue_count FROM pay_withdraw WHERE status = 0 AND created_at < %s",
+            "SELECT COUNT(*) AS overdue_count FROM pay_withdraw WHERE status = 0 AND is_deleted = 0 AND created_at < %s",
             (cutoff,),
         )
         row = cur.fetchall()[0]
@@ -104,7 +106,7 @@ def check_withdraw_fail_rate(conn, thresholds: dict) -> list[MetricResult]:
                 COUNT(*) AS total_processed,
                 SUM(status = 4) AS failed
             FROM pay_withdraw
-            WHERE status IN (3, 4) AND updated_at >= %s
+            WHERE status IN (3, 4) AND is_deleted = 0 AND updated_at >= %s
             """,
             (since,),
         )

@@ -91,6 +91,81 @@ def _withdraw_fail_rate(m: MetricResult, t: dict) -> RuleResult:
     return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
 
 
+# --- game domain rules ---
+
+def _game_transfer_fail_rate(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["balance_transfer"]["fail_rate_warning"]
+    if m.value > threshold:
+        name = m.extra.get("manufacturer_name", f"供应商{m.channel_id}")
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"游戏转账失败率偏高: {name} {m.value:.1%} > {threshold:.1%}",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _game_transfer_retry_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["balance_transfer"]["retry_order_count_warning"]
+    if m.value > threshold:
+        name = m.extra.get("manufacturer_name", f"供应商{m.channel_id}")
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"游戏转账重试异常: {name} {int(m.value)} 笔 > {threshold} 笔",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _game_reconciliation_diff_days(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["reconciliation"]["diff_consecutive_days_critical"]
+    if m.value >= threshold:
+        name = m.extra.get("manufacturer_name", f"供应商{m.channel_id}")
+        return RuleResult(
+            level="critical", action="enqueue", metric=m, threshold=threshold,
+            message=f"厂商对账连续差异: {name} 连续 {int(m.value)} 天存在差异",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+# --- risk domain rules ---
+
+def _risk_alert_backlog_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["alert"]["high_risk_pending_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"高危预警积压超限: {int(m.value)} 条 > {threshold} 条",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _risk_alert_timeout_count(m: MetricResult, t: dict) -> RuleResult:
+    if m.value > 0:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=0,
+            message=f"高危预警超时未处理: {int(m.value)} 条",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=0, message="")
+
+
+def _risk_event_backlog_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["event"]["high_risk_pending_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"高危风控事件积压超限: {int(m.value)} 条 > {threshold} 条",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _risk_blacklist_expiry_count(m: MetricResult, t: dict) -> RuleResult:
+    if m.value > 0:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=0,
+            message=f"临时黑名单即将到期: {int(m.value)} 条需人工复审",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=0, message="")
+
+
 _RULES = {
     "recharge_success_rate": _recharge_success_rate,
     "recharge_timeout_rate": _recharge_timeout_rate,
@@ -98,4 +173,13 @@ _RULES = {
     "channel_balance": _channel_balance,
     "withdraw_queue_count": _withdraw_queue_count,
     "withdraw_fail_rate": _withdraw_fail_rate,
+    # game domain
+    "game_transfer_fail_rate": _game_transfer_fail_rate,
+    "game_transfer_retry_count": _game_transfer_retry_count,
+    "game_reconciliation_diff_days": _game_reconciliation_diff_days,
+    # risk domain
+    "risk_alert_backlog_count": _risk_alert_backlog_count,
+    "risk_alert_timeout_count": _risk_alert_timeout_count,
+    "risk_event_backlog_count": _risk_event_backlog_count,
+    "risk_blacklist_expiry_count": _risk_blacklist_expiry_count,
 }

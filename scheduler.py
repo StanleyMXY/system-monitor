@@ -59,7 +59,7 @@ def _run_monitor(domain: str, check_fn):
                     target_id=str(result.metric.channel_id) if result.metric.channel_id else None,
                     payload={
                         "metric": result.metric.metric,
-                        "value": result.metric.value,
+                        "value": float(result.metric.value),
                         "extra": result.metric.extra,
                     },
                     priority=1 if result.level == "critical" else 2,

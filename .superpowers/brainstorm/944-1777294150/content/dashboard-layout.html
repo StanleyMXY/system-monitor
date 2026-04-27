@@ -1,0 +1,78 @@
+<h2>监控看板布局方案</h2>
+<p class="subtitle">选择你偏好的整体布局，只涉及区块排列，不是最终样式</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:12px;border-radius:6px;font-family:monospace;font-size:11px;color:#888">
+        <div style="background:#16213e;padding:6px 10px;border-radius:4px;color:#e94560;font-size:12px;margin-bottom:8px">⬤ 天工平台 系统监控 &nbsp;|&nbsp; <span style="color:#0f3460">最后更新: 14:23:05</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+          <div style="background:#0f3460;padding:6px;border-radius:4px;border-left:3px solid #e94560">
+            <div style="color:#e94560;font-size:10px">支付域</div>
+            <div style="color:#fff;font-size:13px;font-weight:bold">⚠ 2 CRITICAL</div>
+            <div style="color:#888;font-size:10px">3 WARNING</div>
+          </div>
+          <div style="background:#0f3460;padding:6px;border-radius:4px;border-left:3px solid #f5a623">
+            <div style="color:#f5a623;font-size:10px">游戏供应商域</div>
+            <div style="color:#fff;font-size:13px;font-weight:bold">✓ 正常</div>
+            <div style="color:#888;font-size:10px">1 WARNING</div>
+          </div>
+          <div style="background:#0f3460;padding:6px;border-radius:4px;border-left:3px solid #27ae60">
+            <div style="color:#27ae60;font-size:10px">风控域</div>
+            <div style="color:#fff;font-size:13px;font-weight:bold">✓ 正常</div>
+            <div style="color:#888;font-size:10px">全部 OK</div>
+          </div>
+        </div>
+        <div style="background:#0f3460;padding:6px;border-radius:4px">
+          <div style="color:#aaa;font-size:10px;margin-bottom:4px">最新告警</div>
+          <div style="color:#e94560;font-size:10px">● [CRITICAL] 充值成功率严重低于阈值: 10.4% &lt; 60.0% [渠道1]</div>
+          <div style="color:#f5a623;font-size:10px">● [WARNING] 渠道账号余额不足: 账号3 余额 0.00</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 顶部汇总卡片 + 告警流</h3>
+      <p>三个域的状态汇总卡片横排，下方显示最新告警列表。一眼知道哪个域有问题，点击可展开详情。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:12px;border-radius:6px;font-family:monospace;font-size:11px;color:#888">
+        <div style="background:#16213e;padding:6px 10px;border-radius:4px;color:#e94560;font-size:12px;margin-bottom:8px">⬤ 天工平台 系统监控</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div>
+            <div style="color:#aaa;font-size:10px;margin-bottom:3px">▸ 支付域</div>
+            <div style="background:#0f3460;padding:5px;border-radius:3px;font-size:10px;margin-bottom:3px">
+              <span style="color:#e94560">●</span> 充值成功率 渠道1: <b style="color:#fff">10.4%</b> <span style="color:#e94560">CRITICAL</span>
+            </div>
+            <div style="background:#0f3460;padding:5px;border-radius:3px;font-size:10px;margin-bottom:3px">
+              <span style="color:#f5a623">●</span> 超时率 渠道1: <b style="color:#fff">89.6%</b> <span style="color:#f5a623">WARN</span>
+            </div>
+            <div style="background:#0f3460;padding:5px;border-radius:3px;font-size:10px">
+              <span style="color:#27ae60">●</span> 提现积压: <b style="color:#fff">0条</b> <span style="color:#27ae60">OK</span>
+            </div>
+          </div>
+          <div>
+            <div style="color:#aaa;font-size:10px;margin-bottom:3px">▸ 游戏供应商域</div>
+            <div style="background:#0f3460;padding:5px;border-radius:3px;font-size:10px;margin-bottom:3px">
+              <span style="color:#27ae60">●</span> 转账失败率: <b style="color:#fff">0.2%</b> <span style="color:#27ae60">OK</span>
+            </div>
+            <div style="color:#aaa;font-size:10px;margin:4px 0 3px">▸ 风控域</div>
+            <div style="background:#0f3460;padding:5px;border-radius:3px;font-size:10px">
+              <span style="color:#27ae60">●</span> 高危预警积压: <b style="color:#fff">0条</b> <span style="color:#27ae60">OK</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 按域分组的指标列表</h3>
+      <p>每个域一个区块，每条指标独占一行显示当前值和状态。信息密度高，适合运维直接扫描每个指标。</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px">两个方案都是暗色主题、30秒自动刷新。点击选择或在命令行告诉我。</p>

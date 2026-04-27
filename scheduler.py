@@ -193,15 +193,20 @@ def main():
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    scheduler.start()
-    logger.info("监控调度器已启动，Ctrl+C 退出")
+    async def _run():
+        scheduler.start()
+        logger.info("监控调度器已启动，Ctrl+C 退出")
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            scheduler.shutdown()
+            logger.info("调度器已停止")
+
     try:
-        loop.run_forever()
+        asyncio.run(_run())
     except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
-        logger.info("调度器已停止")
+        pass
 
 
 if __name__ == "__main__":

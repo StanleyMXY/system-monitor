@@ -58,6 +58,13 @@ def test_check_balance_transfer_empty():
     assert results == []
 
 
+def test_check_balance_transfer_total_zero_skipped():
+    rows = [{"manufacturer_id": 1, "manufacturer_name": "A", "total": 0, "failed": 0, "retry_anomaly_count": 0}]
+    conn = make_conn(rows)
+    results = check_balance_transfer(conn, THRESHOLDS)
+    assert results == []
+
+
 def test_check_reconciliation_returns_diff_days_per_manufacturer():
     rows = [
         {"manufacturer_id": 1, "manufacturer_name": "供应商A", "consecutive_diff_days": 3},

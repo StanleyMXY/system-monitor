@@ -3,7 +3,7 @@ from engine.rule_engine import evaluate
 
 THRESHOLDS_ACTIVITY = {
     "redemption": {"fail_rate_warning": 0.05, "fail_count_warning": 10},
-    "first_deposit": {"fail_alert_threshold": 1, "volume_zero_check": True},
+    "first_deposit": {"fail_alert_threshold": 1},
 }
 THRESHOLDS_ACCOUNT = {
     "frozen_balance": {"growth_rate_warning": 0.50},
@@ -50,24 +50,6 @@ def test_first_deposit_fail_count_warning():
 
 def test_first_deposit_fail_count_ok():
     m = _metric("first_deposit_fail_count", 0.0, "activity")
-    result = evaluate([m], THRESHOLDS_ACTIVITY)[0]
-    assert result.level == "ok"
-
-
-def test_first_deposit_volume_zero_during_business_hours():
-    m = _metric("first_deposit_volume", 0.0, "activity", extra={"is_business_hours": True})
-    result = evaluate([m], THRESHOLDS_ACTIVITY)[0]
-    assert result.level == "warning"
-
-
-def test_first_deposit_volume_zero_outside_business_hours():
-    m = _metric("first_deposit_volume", 0.0, "activity", extra={"is_business_hours": False})
-    result = evaluate([m], THRESHOLDS_ACTIVITY)[0]
-    assert result.level == "ok"
-
-
-def test_first_deposit_volume_nonzero():
-    m = _metric("first_deposit_volume", 50.0, "activity", extra={"is_business_hours": True})
     result = evaluate([m], THRESHOLDS_ACTIVITY)[0]
     assert result.level == "ok"
 

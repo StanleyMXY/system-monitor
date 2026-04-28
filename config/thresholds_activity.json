@@ -9,7 +9,6 @@
   },
   "first_deposit": {
     "fail_alert_threshold": 1,
-    "volume_zero_check": true,
     "check_interval_minutes": 5
   }
 }

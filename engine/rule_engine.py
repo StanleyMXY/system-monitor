@@ -199,17 +199,6 @@ def _activity_first_deposit_fail_count(m: MetricResult, t: dict) -> RuleResult:
     return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
 
 
-def _activity_first_deposit_volume(m: MetricResult, t: dict) -> RuleResult:
-    if not t["first_deposit"].get("volume_zero_check", False):
-        return RuleResult(level="ok", action="none", metric=m, threshold=0.0, message="")
-    if m.value == 0 and m.extra.get("is_business_hours", False):
-        return RuleResult(
-            level="warning", action="alert", metric=m, threshold=0.0,
-            message="业务高峰时段首充量为零，疑似系统异常",
-        )
-    return RuleResult(level="ok", action="none", metric=m, threshold=0.0, message="")
-
-
 # --- account domain rules ---
 
 def _account_frozen_balance_growth(m: MetricResult, t: dict) -> RuleResult:
@@ -278,7 +267,6 @@ _RULES = {
     "redemption_fail_rate": _activity_redemption_fail_rate,
     "redemption_fail_count": _activity_redemption_fail_count,
     "first_deposit_fail_count": _activity_first_deposit_fail_count,
-    "first_deposit_volume": _activity_first_deposit_volume,
     # account domain
     "frozen_balance_growth_rate": _account_frozen_balance_growth,
     # operation domain

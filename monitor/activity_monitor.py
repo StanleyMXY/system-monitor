@@ -1,12 +1,5 @@
 import time
-from datetime import datetime
 from engine.models import MetricResult
-
-
-def _is_business_hours() -> bool:
-    """业务高峰时段判断：10:00-23:00。"""
-    hour = datetime.now().hour
-    return 10 <= hour <= 23
 
 
 def check_redemption(conn, thresholds: dict) -> list[MetricResult]:
@@ -46,7 +39,7 @@ def check_redemption(conn, thresholds: dict) -> list[MetricResult]:
 
 
 def check_first_deposit(conn, thresholds: dict) -> list[MetricResult]:
-    """采集首充异常条目数和首充量。"""
+    """采集首充异常条目数。"""
     cfg = thresholds["first_deposit"]
     window = int(cfg["check_interval_minutes"] * 60)
     cutoff = int(time.time()) - window
@@ -54,8 +47,7 @@ def check_first_deposit(conn, thresholds: dict) -> list[MetricResult]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT COUNT(*) AS total_count,
-                   SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END) AS fail_count
+            SELECT SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END) AS fail_count
             FROM act_first_deposit_record
             WHERE created_at >= %s
             """,
@@ -63,17 +55,11 @@ def check_first_deposit(conn, thresholds: dict) -> list[MetricResult]:
         )
         row = cur.fetchall()[0]
 
-    total = int(row["total_count"] or 0)
     fail = int(row["fail_count"] or 0)
 
     return [
         MetricResult(
             domain="activity", metric="first_deposit_fail_count",
             value=float(fail),
-        ),
-        MetricResult(
-            domain="activity", metric="first_deposit_volume",
-            value=float(total),
-            extra={"is_business_hours": _is_business_hours()},
         ),
     ]

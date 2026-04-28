@@ -20,7 +20,6 @@ THRESHOLDS = {
     },
     "first_deposit": {
         "fail_alert_threshold": 1,
-        "volume_zero_check": True,
         "check_interval_minutes": 5,
     },
 }
@@ -55,22 +54,18 @@ def test_check_redemption_zero_total():
     assert rate.value == 0.0
 
 
-def test_check_first_deposit_returns_two_metrics():
+def test_check_first_deposit_returns_one_metric():
     conn = _make_conn([
-        [{"fail_count": 2, "total_count": 50}],
+        [{"fail_count": 2}],
     ])
     results = check_first_deposit(conn, THRESHOLDS)
-    assert len(results) == 2
-    metrics = {r.metric for r in results}
-    assert "first_deposit_fail_count" in metrics
-    assert "first_deposit_volume" in metrics
+    assert len(results) == 1
+    assert results[0].metric == "first_deposit_fail_count"
 
 
-def test_check_first_deposit_has_is_business_hours():
+def test_check_first_deposit_fail_count_value():
     conn = _make_conn([
-        [{"fail_count": 0, "total_count": 10}],
+        [{"fail_count": 3}],
     ])
     results = check_first_deposit(conn, THRESHOLDS)
-    volume = next(r for r in results if r.metric == "first_deposit_volume")
-    assert "is_business_hours" in volume.extra
-    assert isinstance(volume.extra["is_business_hours"], bool)
+    assert results[0].value == 3.0

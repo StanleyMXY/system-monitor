@@ -34,13 +34,6 @@ def test_redemption_fail_rate_ok():
     assert result.level == "ok"
 
 
-def test_redemption_fail_count_warning():
-    m = _metric("redemption_fail_count", 15.0, "activity")
-    result = evaluate([m], THRESHOLDS_ACTIVITY)[0]
-    assert result.level == "warning"
-    assert result.action == "alert"
-
-
 def test_first_deposit_fail_count_warning():
     m = _metric("first_deposit_fail_count", 1.0, "activity")
     result = evaluate([m], THRESHOLDS_ACTIVITY)[0]

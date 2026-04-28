@@ -179,16 +179,6 @@ def _activity_redemption_fail_rate(m: MetricResult, t: dict) -> RuleResult:
     return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
 
 
-def _activity_redemption_fail_count(m: MetricResult, t: dict) -> RuleResult:
-    threshold = t["redemption"]["fail_count_warning"]
-    if m.value > threshold:
-        return RuleResult(
-            level="warning", action="alert", metric=m, threshold=threshold,
-            message=f"活动兑换失败数超限: {int(m.value)} 笔 > {threshold} 笔",
-        )
-    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
-
-
 def _activity_first_deposit_fail_count(m: MetricResult, t: dict) -> RuleResult:
     threshold = t["first_deposit"]["fail_alert_threshold"]
     if m.value >= threshold:
@@ -265,7 +255,6 @@ _RULES = {
     "risk_blacklist_expiry_count": _risk_blacklist_expiry_count,
     # activity domain
     "redemption_fail_rate": _activity_redemption_fail_rate,
-    "redemption_fail_count": _activity_redemption_fail_count,
     "first_deposit_fail_count": _activity_first_deposit_fail_count,
     # account domain
     "frozen_balance_growth_rate": _account_frozen_balance_growth,

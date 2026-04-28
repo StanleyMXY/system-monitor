@@ -26,6 +26,13 @@ from monitor.risk_monitor import (
     check_event_backlog,
     check_blacklist_expiry,
 )
+from monitor.activity_monitor import check_redemption, check_first_deposit
+from monitor.account_monitor import check_frozen_balance
+from monitor.operation_monitor import (
+    check_vip_adjust,
+    check_balance_adjustment,
+    check_config_change,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -142,6 +149,48 @@ async def job_check_blacklist_expiry():
     await loop.run_in_executor(None, _run_monitor, "risk", check_blacklist_expiry)
 
 
+# --- activity jobs ---
+
+async def job_check_redemption():
+    logger.info("[activity] 执行活动兑换监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "activity", check_redemption)
+
+
+async def job_check_first_deposit():
+    logger.info("[activity] 执行首充监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "activity", check_first_deposit)
+
+
+# --- account jobs ---
+
+async def job_check_frozen_balance():
+    logger.info("[account] 执行冻结余额监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "account", check_frozen_balance)
+
+
+# --- operation jobs ---
+
+async def job_check_vip_adjust():
+    logger.info("[operation] 执行 VIP 调整监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "operation", check_vip_adjust)
+
+
+async def job_check_balance_adjustment():
+    logger.info("[operation] 执行大额余额调整监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "operation", check_balance_adjustment)
+
+
+async def job_check_config_change():
+    logger.info("[operation] 执行配置变更监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_monitor, "operation", check_config_change)
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -150,6 +199,9 @@ def main():
     payment_cfg = load_thresholds("payment")
     game_cfg = load_thresholds("game")
     risk_cfg = load_thresholds("risk")
+    activity_cfg = load_thresholds("activity")
+    account_cfg = load_thresholds("account")
+    operation_cfg = load_thresholds("operation")
 
     scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
@@ -189,6 +241,30 @@ def main():
     scheduler.add_job(job_check_blacklist_expiry, "interval",
                       minutes=risk_cfg["blacklist"]["check_interval_minutes"],
                       id="risk_blacklist_expiry", max_instances=1)
+
+    # activity
+    scheduler.add_job(job_check_redemption, "interval",
+                      minutes=activity_cfg["redemption"]["check_interval_minutes"],
+                      id="activity_redemption", max_instances=1)
+    scheduler.add_job(job_check_first_deposit, "interval",
+                      minutes=activity_cfg["first_deposit"]["check_interval_minutes"],
+                      id="activity_first_deposit", max_instances=1)
+
+    # account
+    scheduler.add_job(job_check_frozen_balance, "interval",
+                      minutes=account_cfg["frozen_balance"]["check_interval_minutes"],
+                      id="account_frozen_balance", max_instances=1)
+
+    # operation
+    scheduler.add_job(job_check_vip_adjust, "interval",
+                      minutes=operation_cfg["vip_adjust"]["check_interval_minutes"],
+                      id="operation_vip_adjust", max_instances=1)
+    scheduler.add_job(job_check_balance_adjustment, "interval",
+                      minutes=operation_cfg["balance_adjustment"]["check_interval_minutes"],
+                      id="operation_balance_adjustment", max_instances=1)
+    scheduler.add_job(job_check_config_change, "interval",
+                      minutes=operation_cfg["config_change"]["check_interval_minutes"],
+                      id="operation_config_change", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

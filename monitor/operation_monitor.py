@@ -4,12 +4,12 @@ from engine.models import MetricResult
 
 def check_vip_adjust(conn, thresholds: dict) -> list[MetricResult]:
     """采集过去 1 小时 VIP 调整操作次数。"""
-    cutoff = int(time.time()) - 3600
+    cutoff_ms = (int(time.time()) - 3600) * 1000  # created_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) AS adjust_count FROM adm_vip_adjust_log WHERE created_at >= FROM_UNIXTIME(%s)",
-            (cutoff,),
+            "SELECT COUNT(*) AS adjust_count FROM adm_vip_adjust_log WHERE created_at >= %s",
+            (cutoff_ms,),
         )
         row = cur.fetchall()[0]
 

@@ -166,6 +166,98 @@ def _risk_blacklist_expiry_count(m: MetricResult, t: dict) -> RuleResult:
     return RuleResult(level="ok", action="none", metric=m, threshold=0, message="")
 
 
+# --- activity domain rules ---
+
+def _activity_redemption_fail_rate(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["redemption"]["fail_rate_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"活动兑换失败率偏高: {m.value:.1%} > {threshold:.1%}"
+                    f"（共 {m.extra.get('total_count', '?')} 笔）",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _activity_redemption_fail_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["redemption"]["fail_count_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"活动兑换失败数超限: {int(m.value)} 笔 > {threshold} 笔",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _activity_first_deposit_fail_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["first_deposit"]["fail_alert_threshold"]
+    if m.value >= threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"首充异常记录: {int(m.value)} 条",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _activity_first_deposit_volume(m: MetricResult, t: dict) -> RuleResult:
+    if not t["first_deposit"].get("volume_zero_check", False):
+        return RuleResult(level="ok", action="none", metric=m, threshold=0.0, message="")
+    if m.value == 0 and m.extra.get("is_business_hours", False):
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=0.0,
+            message="业务高峰时段首充量为零，疑似系统异常",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=0.0, message="")
+
+
+# --- account domain rules ---
+
+def _account_frozen_balance_growth(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["frozen_balance"]["growth_rate_warning"]
+    if m.value > threshold:
+        curr = m.extra.get("current_amount", 0)
+        prev = m.extra.get("previous_amount", 0)
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"冻结余额增长率异常: {m.value:.1%} > {threshold:.1%}"
+                    f"（{prev:.0f} → {curr:.0f}）",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+# --- operation domain rules ---
+
+def _operation_vip_adjust_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["vip_adjust"]["batch_count_per_hour_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="enqueue", metric=m, threshold=threshold,
+            message=f"VIP 批量调整异常: 近1小时 {int(m.value)} 次 > {threshold} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _operation_balance_adjustment_large(m: MetricResult, t: dict) -> RuleResult:
+    if m.value >= 1:
+        max_amt = m.extra.get("max_amount", 0)
+        threshold_amt = t["balance_adjustment"]["large_amount_threshold"]
+        return RuleResult(
+            level="warning", action="enqueue", metric=m, threshold=1.0,
+            message=f"大额余额调整: {int(m.value)} 笔超过 {threshold_amt} 元（最大 {max_amt:.0f} 元）",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=1.0, message="")
+
+
+def _operation_config_change_count(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["config_change"]["change_count_per_hour_warning"]
+    if m.value > threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"系统配置变更频繁: 近1小时 {int(m.value)} 次 > {threshold} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
 _RULES = {
     "recharge_success_rate": _recharge_success_rate,
     "recharge_timeout_rate": _recharge_timeout_rate,
@@ -182,4 +274,15 @@ _RULES = {
     "risk_alert_timeout_count": _risk_alert_timeout_count,
     "risk_event_backlog_count": _risk_event_backlog_count,
     "risk_blacklist_expiry_count": _risk_blacklist_expiry_count,
+    # activity domain
+    "redemption_fail_rate": _activity_redemption_fail_rate,
+    "redemption_fail_count": _activity_redemption_fail_count,
+    "first_deposit_fail_count": _activity_first_deposit_fail_count,
+    "first_deposit_volume": _activity_first_deposit_volume,
+    # account domain
+    "frozen_balance_growth_rate": _account_frozen_balance_growth,
+    # operation domain
+    "vip_adjust_count": _operation_vip_adjust_count,
+    "balance_adjustment_large_count": _operation_balance_adjustment_large,
+    "config_change_count": _operation_config_change_count,
 }

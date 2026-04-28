@@ -21,7 +21,7 @@ def check_alert_backlog(conn, thresholds: dict) -> list[MetricResult]:
 def check_alert_timeout(conn, thresholds: dict) -> list[MetricResult]:
     """采集高危预警超时未处理数（未处理且超过 high_risk_timeout_hours）。"""
     cfg = thresholds["alert"]
-    cutoff = int(time.time()) - int(cfg["high_risk_timeout_hours"] * 3600)
+    cutoff_ms = (int(time.time()) - int(cfg["high_risk_timeout_hours"] * 3600)) * 1000  # created_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
@@ -32,7 +32,7 @@ def check_alert_timeout(conn, thresholds: dict) -> list[MetricResult]:
               AND handle_status = 0
               AND created_at < %s
             """,
-            (cutoff,),
+            (cutoff_ms,),
         )
         row = cur.fetchall()[0]
 
@@ -59,7 +59,8 @@ def check_event_backlog(conn, thresholds: dict) -> list[MetricResult]:
 def check_blacklist_expiry(conn, thresholds: dict) -> list[MetricResult]:
     """采集临时黑名单即将到期数（expire_type=2 且在 expiry_reminder_hours 内到期）。"""
     cfg = thresholds["blacklist"]
-    deadline = int(time.time()) + int(cfg["expiry_reminder_hours"] * 3600)
+    now_ms = int(time.time()) * 1000  # expire_time 为毫秒时间戳
+    deadline_ms = now_ms + int(cfg["expiry_reminder_hours"] * 3600) * 1000
 
     with conn.cursor() as cur:
         cur.execute(
@@ -70,7 +71,7 @@ def check_blacklist_expiry(conn, thresholds: dict) -> list[MetricResult]:
               AND expire_time <= %s
               AND expire_time > %s
             """,
-            (deadline, int(time.time())),
+            (deadline_ms, now_ms),
         )
         row = cur.fetchall()[0]
 

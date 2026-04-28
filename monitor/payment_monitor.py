@@ -1,6 +1,3 @@
-# monitor/payment_monitor.py
-# 支付域监控采集器（P0）：查询 tian-gong 库，返回 MetricResult 列表
-# 不直接开连接，由调度器传入，便于测试和连接管理
 import time
 from engine.models import MetricResult
 
@@ -8,18 +5,20 @@ from engine.models import MetricResult
 def check_recharge(conn, thresholds: dict) -> list[MetricResult]:
     """分渠道采集：充值成功率 / 超时率 / 积压数。"""
     cfg = thresholds["recharge"]
-    cutoff = int(time.time()) - cfg["pending_timeout_minutes"] * 60
+    now = int(time.time())
+    pending_cutoff_ms = (now - cfg["pending_timeout_minutes"] * 60) * 1000
+    window_cutoff_ms = (now - 3600) * 1000  # created_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT
-                pca.channel_id                               AS channel_id,
-                pc.channel_name                              AS channel_name,
-                COUNT(*)                                     AS total,
-                SUM(pr.status = 1)                          AS success,
-                SUM(pr.status = 3)                          AS timeout,
-                SUM(pr.status = 0 AND pr.created_at < %s)  AS pending_overdue
+                pca.channel_id                                        AS channel_id,
+                pc.channel_name                                       AS channel_name,
+                COUNT(*)                                              AS total,
+                SUM(pr.status = 1)                                   AS success,
+                SUM(pr.status = 3)                                   AS timeout,
+                SUM(pr.status = 0 AND pr.created_at < %s)           AS pending_overdue
             FROM pay_recharge pr
             JOIN pay_channel_account pca ON pca.id = pr.channel_account_id AND pca.is_deleted = 0
             JOIN pay_channel pc ON pc.id = pca.channel_id AND pc.is_deleted = 0
@@ -27,7 +26,7 @@ def check_recharge(conn, thresholds: dict) -> list[MetricResult]:
               AND pr.is_deleted = 0
             GROUP BY pca.channel_id, pc.channel_name
             """,
-            (cutoff, int(time.time()) - 3600),
+            (pending_cutoff_ms, window_cutoff_ms),
         )
         rows = cur.fetchall()
 
@@ -80,12 +79,12 @@ def check_channel_balance(conn, thresholds: dict) -> list[MetricResult]:
 def check_withdraw_queue(conn, thresholds: dict) -> list[MetricResult]:
     """采集提现审核积压数（状态=0 且超 queue_timeout_hours）。"""
     cfg = thresholds["withdraw"]
-    cutoff = int(time.time()) - int(cfg["queue_timeout_hours"] * 3600)
+    cutoff_ms = (int(time.time()) - int(cfg["queue_timeout_hours"] * 3600)) * 1000
 
     with conn.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) AS overdue_count FROM pay_withdraw WHERE status = 0 AND is_deleted = 0 AND created_at < %s",
-            (cutoff,),
+            (cutoff_ms,),
         )
         row = cur.fetchall()[0]
 
@@ -97,7 +96,7 @@ def check_withdraw_queue(conn, thresholds: dict) -> list[MetricResult]:
 
 def check_withdraw_fail_rate(conn, thresholds: dict) -> list[MetricResult]:
     """采集最近 1 小时提现失败率（status=4 / 已处理总数）。"""
-    since = int(time.time()) - 3600
+    since_ms = (int(time.time()) - 3600) * 1000  # updated_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
@@ -108,7 +107,7 @@ def check_withdraw_fail_rate(conn, thresholds: dict) -> list[MetricResult]:
             FROM pay_withdraw
             WHERE status IN (3, 4) AND is_deleted = 0 AND updated_at >= %s
             """,
-            (since,),
+            (since_ms,),
         )
         row = cur.fetchall()[0]
 

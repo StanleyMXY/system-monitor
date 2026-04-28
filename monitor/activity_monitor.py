@@ -6,7 +6,7 @@ def check_redemption(conn, thresholds: dict) -> list[MetricResult]:
     """采集活动兑换失败率和失败数量。"""
     cfg = thresholds["redemption"]
     window = int(cfg["check_interval_minutes"] * 60)
-    cutoff = int(time.time()) - window
+    cutoff_ms = (int(time.time()) - window) * 1000  # created_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
@@ -16,7 +16,7 @@ def check_redemption(conn, thresholds: dict) -> list[MetricResult]:
             FROM act_activity_redemption
             WHERE created_at >= %s
             """,
-            (cutoff,),
+            (cutoff_ms,),
         )
         row = cur.fetchall()[0]
 
@@ -42,7 +42,7 @@ def check_first_deposit(conn, thresholds: dict) -> list[MetricResult]:
     """采集首充异常条目数。"""
     cfg = thresholds["first_deposit"]
     window = int(cfg["check_interval_minutes"] * 60)
-    cutoff = int(time.time()) - window
+    cutoff_ms = (int(time.time()) - window) * 1000  # created_at 为毫秒时间戳
 
     with conn.cursor() as cur:
         cur.execute(
@@ -51,7 +51,7 @@ def check_first_deposit(conn, thresholds: dict) -> list[MetricResult]:
             FROM act_first_deposit_record
             WHERE created_at >= %s
             """,
-            (cutoff,),
+            (cutoff_ms,),
         )
         row = cur.fetchall()[0]
 

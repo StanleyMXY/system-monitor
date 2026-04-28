@@ -28,24 +28,24 @@ def make_conn(rows):
     return conn
 
 
-def test_check_balance_transfer_returns_metrics_per_manufacturer():
+def test_check_balance_transfer_returns_metrics_per_vendor():
     rows = [
-        {"manufacturer_id": 1, "manufacturer_name": "供应商A", "total": 100, "failed": 3, "retry_anomaly_count": 2},
-        {"manufacturer_id": 2, "manufacturer_name": "供应商B", "total": 50, "failed": 5, "retry_anomaly_count": 6},
+        {"vendor_id": "HG_JILI", "provider_code": "JILI", "total": 100, "failed": 3, "retry_anomaly_count": 2},
+        {"vendor_id": "HG_PG", "provider_code": "PG", "total": 50, "failed": 5, "retry_anomaly_count": 6},
     ]
     conn = make_conn(rows)
     results = check_balance_transfer(conn, THRESHOLDS)
 
     assert len(results) == 4  # 每供应商 2 条: fail_rate + retry_count
-    metrics = {(r.channel_id, r.metric) for r in results}
-    assert (1, "game_transfer_fail_rate") in metrics
-    assert (1, "game_transfer_retry_count") in metrics
-    assert (2, "game_transfer_fail_rate") in metrics
-    assert (2, "game_transfer_retry_count") in metrics
+    metrics = {(r.extra["manufacturer_name"], r.metric) for r in results}
+    assert ("JILI", "game_transfer_fail_rate") in metrics
+    assert ("JILI", "game_transfer_retry_count") in metrics
+    assert ("PG", "game_transfer_fail_rate") in metrics
+    assert ("PG", "game_transfer_retry_count") in metrics
 
 
 def test_check_balance_transfer_fail_rate_calculation():
-    rows = [{"manufacturer_id": 1, "manufacturer_name": "A", "total": 100, "failed": 5, "retry_anomaly_count": 0}]
+    rows = [{"vendor_id": "HG_JILI", "provider_code": "JILI", "total": 100, "failed": 5, "retry_anomaly_count": 0}]
     conn = make_conn(rows)
     results = check_balance_transfer(conn, THRESHOLDS)
     rate = next(r for r in results if r.metric == "game_transfer_fail_rate")
@@ -59,22 +59,22 @@ def test_check_balance_transfer_empty():
 
 
 def test_check_balance_transfer_total_zero_skipped():
-    rows = [{"manufacturer_id": 1, "manufacturer_name": "A", "total": 0, "failed": 0, "retry_anomaly_count": 0}]
+    rows = [{"vendor_id": "HG_JILI", "provider_code": "JILI", "total": 0, "failed": 0, "retry_anomaly_count": 0}]
     conn = make_conn(rows)
     results = check_balance_transfer(conn, THRESHOLDS)
     assert results == []
 
 
-def test_check_reconciliation_returns_diff_days_per_manufacturer():
+def test_check_reconciliation_returns_diff_days_per_vendor():
     rows = [
-        {"manufacturer_id": 1, "manufacturer_name": "供应商A", "consecutive_diff_days": 3},
-        {"manufacturer_id": 2, "manufacturer_name": "供应商B", "consecutive_diff_days": 0},
+        {"manuf": "JILI", "consecutive_diff_days": 3},
+        {"manuf": "PG", "consecutive_diff_days": 0},
     ]
     conn = make_conn(rows)
     results = check_reconciliation(conn, THRESHOLDS)
 
     assert len(results) == 2
     assert all(r.metric == "game_reconciliation_diff_days" for r in results)
-    vals = {r.channel_id: r.value for r in results}
-    assert vals[1] == 3.0
-    assert vals[2] == 0.0
+    vals = {r.extra["manufacturer_name"]: r.value for r in results}
+    assert vals["JILI"] == 3.0
+    assert vals["PG"] == 0.0

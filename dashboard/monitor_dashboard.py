@@ -12,6 +12,9 @@ _DOMAIN_LABELS = {
     "payment": "支付域",
     "game": "游戏供应商域",
     "risk": "风控域",
+    "activity": "活动域",
+    "account": "账户域",
+    "operation": "系统操作域",
 }
 _LEVEL_COLOR = {
     "critical": "#e94560",
@@ -68,7 +71,7 @@ class MonitorDashboard:
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         cards_html = ""
-        for domain_key in ["payment", "game", "risk"]:
+        for domain_key in ["payment", "game", "risk", "activity", "account", "operation"]:
             label = _DOMAIN_LABELS.get(domain_key, domain_key)
             summary = self.get_domain_summary(domain_key)
             if summary["critical"] > 0:

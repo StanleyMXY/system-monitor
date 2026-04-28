@@ -1,8 +1,16 @@
 # executor/action_executor.py
 # 执行层：将需人工审批或高危动作写入 tg_monitor.monitor_action_queue
+import decimal
 import json
 import time
 from config.db import get_monitor_conn
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 def enqueue_action(
@@ -30,7 +38,7 @@ def enqueue_action(
                     domain,
                     action_type,
                     target_id,
-                    json.dumps(payload, ensure_ascii=False),
+                    json.dumps(payload, cls=_Encoder, ensure_ascii=False),
                     priority,
                     triggered_by,
                     metric_value,

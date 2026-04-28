@@ -8,7 +8,7 @@ def check_vip_adjust(conn, thresholds: dict) -> list[MetricResult]:
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) AS adjust_count FROM adm_vip_adjust_log WHERE created_at >= %s",
+            "SELECT COUNT(*) AS adjust_count FROM adm_vip_adjust_log WHERE created_at >= FROM_UNIXTIME(%s)",
             (cutoff,),
         )
         row = cur.fetchall()[0]
@@ -23,7 +23,7 @@ def check_balance_adjustment(conn, thresholds: dict) -> list[MetricResult]:
     """采集过去 N 分钟内大额余额调整笔数。"""
     cfg = thresholds["balance_adjustment"]
     window = int(cfg["check_interval_minutes"] * 60)
-    cutoff = int(time.time()) - window
+    cutoff_ms = (int(time.time()) - window) * 1000  # created_at 为毫秒时间戳
     threshold_amount = cfg["large_amount_threshold"]
 
     with conn.cursor() as cur:
@@ -33,7 +33,7 @@ def check_balance_adjustment(conn, thresholds: dict) -> list[MetricResult]:
             FROM pay_balance_adjustment
             WHERE created_at >= %s AND ABS(amount) >= %s
             """,
-            (cutoff, threshold_amount),
+            (cutoff_ms, threshold_amount),
         )
         row = cur.fetchall()[0]
 
@@ -53,7 +53,7 @@ def check_config_change(conn, thresholds: dict) -> list[MetricResult]:
             """
             SELECT COUNT(*) AS change_count
             FROM sys_operation_log
-            WHERE operation_type = 'config_change' AND created_at >= %s
+            WHERE operation_type = 'config_change' AND created_at >= FROM_UNIXTIME(%s)
             """,
             (cutoff,),
         )

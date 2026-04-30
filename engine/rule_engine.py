@@ -237,6 +237,81 @@ def _operation_config_change_count(m: MetricResult, t: dict) -> RuleResult:
     return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
 
 
+# --- log domain rules ---
+
+def _log_game_launch_error(m: MetricResult, t: dict) -> RuleResult:
+    cfg = t["high_priority"]["game_launch_error"]
+    if m.value >= cfg["count_critical"]:
+        sample = m.extra.get("sample", "")
+        return RuleResult(
+            level="critical", action="enqueue", metric=m,
+            threshold=cfg["count_critical"],
+            message=f"游戏启动严重异常: {int(m.value)} 次 >= {cfg['count_critical']} 次"
+                    + (f" | {sample}" if sample else ""),
+        )
+    if m.value >= cfg["count_warning"]:
+        return RuleResult(
+            level="warning", action="alert", metric=m,
+            threshold=cfg["count_warning"],
+            message=f"游戏启动异常偏高: {int(m.value)} 次 >= {cfg['count_warning']} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=cfg["count_warning"], message="")
+
+
+def _log_mq_route_error(m: MetricResult, t: dict) -> RuleResult:
+    cfg = t["high_priority"]["mq_route_error"]
+    if m.value >= cfg["count_critical"]:
+        return RuleResult(
+            level="critical", action="enqueue", metric=m,
+            threshold=cfg["count_critical"],
+            message=f"MQ 路由严重故障: {int(m.value)} 次 >= {cfg['count_critical']} 次",
+        )
+    if m.value >= cfg["count_warning"]:
+        return RuleResult(
+            level="warning", action="alert", metric=m,
+            threshold=cfg["count_warning"],
+            message=f"MQ 路由失败偏高: {int(m.value)} 次 >= {cfg['count_warning']} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=cfg["count_warning"], message="")
+
+
+def _log_db_shard_error(m: MetricResult, t: dict) -> RuleResult:
+    cfg = t["high_priority"]["db_shard_error"]
+    if m.value >= cfg["count_critical"]:
+        return RuleResult(
+            level="critical", action="enqueue", metric=m,
+            threshold=cfg["count_critical"],
+            message=f"分表路由严重故障: {int(m.value)} 次 >= {cfg['count_critical']} 次",
+        )
+    if m.value >= cfg["count_warning"]:
+        return RuleResult(
+            level="warning", action="alert", metric=m,
+            threshold=cfg["count_warning"],
+            message=f"分表路由失败: {int(m.value)} 次 >= {cfg['count_warning']} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=cfg["count_warning"], message="")
+
+
+def _log_websocket_error(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["low_priority"]["websocket_error"]["count_warning"]
+    if m.value >= threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"WebSocket 异常偏高: {int(m.value)} 次 >= {threshold} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
+def _log_db_duplicate_error(m: MetricResult, t: dict) -> RuleResult:
+    threshold = t["low_priority"]["db_duplicate_error"]["count_warning"]
+    if m.value >= threshold:
+        return RuleResult(
+            level="warning", action="alert", metric=m, threshold=threshold,
+            message=f"DB 唯一键冲突偏高: {int(m.value)} 次 >= {threshold} 次",
+        )
+    return RuleResult(level="ok", action="none", metric=m, threshold=threshold, message="")
+
+
 _RULES = {
     "recharge_success_rate": _recharge_success_rate,
     "recharge_timeout_rate": _recharge_timeout_rate,
@@ -262,4 +337,10 @@ _RULES = {
     "vip_adjust_count": _operation_vip_adjust_count,
     "balance_adjustment_large_count": _operation_balance_adjustment_large,
     "config_change_count": _operation_config_change_count,
+    # log domain
+    "game_launch_error_count": _log_game_launch_error,
+    "mq_route_error_count": _log_mq_route_error,
+    "db_shard_error_count": _log_db_shard_error,
+    "websocket_error_count": _log_websocket_error,
+    "db_duplicate_error_count": _log_db_duplicate_error,
 }

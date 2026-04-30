@@ -33,6 +33,14 @@ from monitor.operation_monitor import (
     check_balance_adjustment,
     check_config_change,
 )
+from config.es import get_es_client
+from monitor.log_monitor import (
+    check_game_launch_error,
+    check_mq_route_error,
+    check_db_shard_error,
+    check_websocket_error,
+    check_db_duplicate_error,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,6 +89,43 @@ def _run_monitor(domain: str, check_fn):
         dashboard.update(domain, rule_results)
     except Exception as exc:
         logger.error(f"看板更新异常 [{domain}]: {exc}", exc_info=True)
+
+
+def _run_log_monitor(check_fn):
+    """执行日志采集函数的完整流程：采集 → 评估 → 告警 → 入队 → 更新看板。"""
+    thresholds = load_thresholds("log")
+    es = get_es_client()
+
+    metrics = check_fn(es, thresholds)
+    rule_results = evaluate(metrics, thresholds)
+
+    for result in rule_results:
+        if result.level == "ok":
+            continue
+        try:
+            handle(result)
+            if result.action == "enqueue":
+                enqueue_action(
+                    domain=result.metric.domain,
+                    action_type="log_alert",
+                    target_id=None,
+                    payload={
+                        "metric": result.metric.metric,
+                        "value": float(result.metric.value),
+                        "extra": result.metric.extra,
+                    },
+                    priority=1 if result.level == "critical" else 2,
+                    triggered_by=result.message,
+                    metric_value=result.metric.value,
+                    threshold=result.threshold,
+                )
+        except Exception as exc:
+            logger.error(f"处理日志告警结果异常 [{result.metric.metric}]: {exc}", exc_info=True)
+
+    try:
+        dashboard.update("log", rule_results)
+    except Exception as exc:
+        logger.error(f"看板更新异常 [log]: {exc}", exc_info=True)
 
 
 # --- payment jobs ---
@@ -191,6 +236,38 @@ async def job_check_config_change():
     await loop.run_in_executor(None, _run_monitor, "operation", check_config_change)
 
 
+# --- log jobs ---
+
+async def job_check_game_launch_error():
+    logger.info("[log] 执行游戏启动异常监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_monitor, check_game_launch_error)
+
+
+async def job_check_mq_route_error():
+    logger.info("[log] 执行 MQ 路由错误监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_monitor, check_mq_route_error)
+
+
+async def job_check_db_shard_error():
+    logger.info("[log] 执行分表路由错误监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_monitor, check_db_shard_error)
+
+
+async def job_check_websocket_error():
+    logger.info("[log] 执行 WebSocket 异常监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_monitor, check_websocket_error)
+
+
+async def job_check_db_duplicate_error():
+    logger.info("[log] 执行 DB 唯一键冲突监控")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_monitor, check_db_duplicate_error)
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -202,6 +279,7 @@ def main():
     activity_cfg = load_thresholds("activity")
     account_cfg = load_thresholds("account")
     operation_cfg = load_thresholds("operation")
+    log_cfg = load_thresholds("log")
 
     scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
@@ -265,6 +343,25 @@ def main():
     scheduler.add_job(job_check_config_change, "interval",
                       minutes=operation_cfg["config_change"]["check_interval_minutes"],
                       id="operation_config_change", max_instances=1)
+
+    # log (high priority)
+    scheduler.add_job(job_check_game_launch_error, "interval",
+                      minutes=log_cfg["high_priority"]["check_interval_minutes"],
+                      id="log_game_launch_error", max_instances=1)
+    scheduler.add_job(job_check_mq_route_error, "interval",
+                      minutes=log_cfg["high_priority"]["check_interval_minutes"],
+                      id="log_mq_route_error", max_instances=1)
+    scheduler.add_job(job_check_db_shard_error, "interval",
+                      minutes=log_cfg["high_priority"]["check_interval_minutes"],
+                      id="log_db_shard_error", max_instances=1)
+
+    # log (low priority)
+    scheduler.add_job(job_check_websocket_error, "interval",
+                      minutes=log_cfg["low_priority"]["check_interval_minutes"],
+                      id="log_websocket_error", max_instances=1)
+    scheduler.add_job(job_check_db_duplicate_error, "interval",
+                      minutes=log_cfg["low_priority"]["check_interval_minutes"],
+                      id="log_db_duplicate_error", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

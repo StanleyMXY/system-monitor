@@ -42,7 +42,8 @@
       "Bash(\"D:\\\\Projects\\\\PycharmProjects\\\\System Monitor\\\\.venv\\\\Scripts\\\\pytest\" \"D:\\\\Projects\\\\PycharmProjects\\\\System Monitor\\\\tests\\\\test_monitor_dashboard.py\" -v)",
       "Bash(\"D:\\\\Projects\\\\PycharmProjects\\\\System Monitor\\\\.venv\\\\Scripts\\\\pytest\" tests/test_monitor_dashboard.py -v)",
       "Bash(.venv/Scripts/python -c \"import scheduler; print\\('import OK'\\)\")",
-      "Bash(.venv/Scripts/pytest tests/ -q)"
+      "Bash(.venv/Scripts/pytest tests/ -q)",
+      "Bash(curl -s --noproxy '*' --max-time 15 -X POST 'http://8.212.158.149:9200/q6app-*/_search?pretty' -H 'Content-Type: application/json' '-d{ *)"
     ]
   }
 }

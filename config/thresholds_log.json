@@ -1,0 +1,27 @@
+{
+  "_comment": "日志监控阈值，count 单位：次，interval 单位：分钟",
+  "high_priority": {
+    "check_interval_minutes": 5,
+    "game_launch_error": {
+      "count_warning": 3,
+      "count_critical": 10
+    },
+    "mq_route_error": {
+      "count_warning": 5,
+      "count_critical": 20
+    },
+    "db_shard_error": {
+      "count_warning": 1,
+      "count_critical": 5
+    }
+  },
+  "low_priority": {
+    "check_interval_minutes": 30,
+    "websocket_error": {
+      "count_warning": 20
+    },
+    "db_duplicate_error": {
+      "count_warning": 10
+    }
+  }
+}

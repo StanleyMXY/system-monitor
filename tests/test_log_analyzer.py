@@ -156,3 +156,14 @@ def test_fetch_candidates_filters_known_noise(tmp_path, monkeypatch):
     # risk_task_fail_Delay 的候选应被过滤掉，只剩 ShardingSphereException
     assert len(candidates) == 1
     assert candidates[0]["term"] == "ShardingSphereException"
+
+
+def test_append_noise_to_json_id_increments(tmp_path, monkeypatch):
+    """连续写入两条噪音规则，ID 应递增不重复。"""
+    from engine import log_analyzer
+    monkeypatch.setattr(log_analyzer, "_NOISE_RULES_PATH", tmp_path / "noise.json")
+    log_analyzer._append_noise_to_json("termA", "desc A", ["A"])
+    log_analyzer._append_noise_to_json("termB", "desc B", ["B"])
+    data = json.loads((tmp_path / "noise.json").read_text(encoding="utf-8"))
+    assert data["rules"][0]["id"] == "noise_001"
+    assert data["rules"][1]["id"] == "noise_002"

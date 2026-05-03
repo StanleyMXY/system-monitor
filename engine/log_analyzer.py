@@ -166,11 +166,11 @@ def analyze_with_llm(candidates: list[dict]) -> list[dict]:
         HumanMessage(content=user_content),
     ])
 
+    import re
     raw = response.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
+    fence = re.match(r"```(?:json)?\s*([\s\S]+?)\s*```\s*$", raw)
+    if fence:
+        raw = fence.group(1)
 
     result = json.loads(raw)
     return result.get("patterns", [])
@@ -244,8 +244,11 @@ def _append_noise_to_json(
     else:
         data = {"_comment": "已确认的日志噪音规则", "rules": []}
 
+    import re
     existing_ids = [r.get("id", "") for r in data.get("rules", [])]
-    new_id = f"noise_{len(existing_ids) + 1:03d}"
+    used_nums = [int(m.group(1)) for rid in existing_ids if (m := re.match(r"noise_(\d+)$", rid))]
+    next_num = max(used_nums, default=0) + 1
+    new_id = f"noise_{next_num:03d}"
 
     data.setdefault("rules", []).append({
         "id": new_id,
@@ -391,7 +394,10 @@ def main(interactive: bool = True) -> None:
         return
 
     if not candidates:
-        print("未发现新的异常模式，退出。")
+        if interactive:
+            print("未发现新的异常模式，退出。")
+        else:
+            logger.info("[log_analyzer] 非交互模式：未发现新异常模式，正常退出")
         return
 
     print("正在调用 LLM 分析...")

@@ -1,0 +1,12 @@
+{
+  "_comment": "已确认的日志噪音规则，运行时过滤用。must_phrases 中所有短语同时命中才算匹配。",
+  "rules": [
+    {
+      "id": "noise_001",
+      "description": "RabbitMQ risk_task_fail_Delay exchange 缺 x-delayed-message 插件，持续报错，已知问题待开发修复",
+      "must_phrases": ["risk_task_fail_Delay", "PRECONDITION_FAILED"],
+      "confirmed_at": "2026-05-03",
+      "confirmed_by": "operator"
+    }
+  ]
+}

@@ -29,5 +29,6 @@ CREATE TABLE IF NOT EXISTS monitor_metric_history (
   level       VARCHAR(16)   NOT NULL,
   recorded_at BIGINT        NOT NULL,
   INDEX idx_metric_time (metric, recorded_at),
-  INDEX idx_domain_time (domain, recorded_at)
+  INDEX idx_domain_time (domain, recorded_at),
+  INDEX idx_level (level)
 );

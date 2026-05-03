@@ -86,3 +86,73 @@ def test_count_errors_injects_must_not(tmp_path, monkeypatch):
         clause == {"bool": {"must": [{"match_phrase": {"message": "BadThing"}}]}}
         for clause in must_not
     )
+
+
+# ── ES 聚合层测试 ──────────────────────────────────────────────────────────────
+
+def test_fetch_candidates_returns_top_terms():
+    """fetch_candidates 应从 ES significant_terms 响应中提取候选模式。"""
+    from engine.log_analyzer import fetch_candidates
+
+    fake_agg_resp = {
+        "aggregations": {
+            "new_patterns": {
+                "buckets": [
+                    {"key": "IOException LaunchController", "doc_count": 120, "score": 8.5},
+                    {"key": "PRECONDITION_FAILED Cannot route", "doc_count": 45, "score": 3.2},
+                ]
+            }
+        }
+    }
+    fake_search_resp = {
+        "hits": {"hits": [
+            {"_source": {"message": "sample log line", "@timestamp": "2026-05-03T03:00:00Z"}}
+        ]}
+    }
+
+    mock_es = MagicMock()
+    mock_es.search.side_effect = [fake_agg_resp, fake_search_resp, fake_search_resp]
+
+    candidates = fetch_candidates(mock_es, prefix="q6")
+
+    assert len(candidates) == 2
+    assert candidates[0]["term"] == "IOException LaunchController"
+    assert candidates[0]["doc_count"] == 120
+    assert candidates[0]["score"] == 8.5
+    assert "samples" in candidates[0]
+
+
+def test_fetch_candidates_filters_known_noise(tmp_path, monkeypatch):
+    """fetch_candidates 应跳过已在噪音规则库中的候选。"""
+    noise_file = tmp_path / "noise_rules.json"
+    noise_file.write_text(json.dumps({
+        "rules": [{"id": "n1", "description": "x", "must_phrases": ["risk_task_fail_Delay"]}]
+    }), encoding="utf-8")
+
+    from engine import log_analyzer
+    monkeypatch.setattr(log_analyzer, "_NOISE_RULES_PATH", noise_file)
+
+    fake_agg_resp = {
+        "aggregations": {
+            "new_patterns": {
+                "buckets": [
+                    {"key": "risk_task_fail_Delay PRECONDITION", "doc_count": 500, "score": 2.1},
+                    {"key": "ShardingSphereException", "doc_count": 30, "score": 5.0},
+                ]
+            }
+        }
+    }
+    fake_search_resp = {
+        "hits": {"hits": [
+            {"_source": {"message": "shard error", "@timestamp": "2026-05-03T03:00:00Z"}}
+        ]}
+    }
+
+    mock_es = MagicMock()
+    mock_es.search.side_effect = [fake_agg_resp, fake_search_resp]
+
+    candidates = log_analyzer.fetch_candidates(mock_es, prefix="q6")
+
+    # risk_task_fail_Delay 的候选应被过滤掉，只剩 ShardingSphereException
+    assert len(candidates) == 1
+    assert candidates[0]["term"] == "ShardingSphereException"

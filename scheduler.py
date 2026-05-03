@@ -3,11 +3,12 @@
 # 运行方式: python scheduler.py
 import asyncio
 import logging
+import time
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.events import EVENT_JOB_ERROR
 
-from config.db import get_source_conn
+from config.db import get_source_conn, get_monitor_conn
 from engine.threshold_config import load_thresholds
 from engine.rule_engine import evaluate
 from engine.alert_engine import handle
@@ -90,6 +91,11 @@ def _run_monitor(domain: str, check_fn):
     except Exception as exc:
         logger.error(f"看板更新异常 [{domain}]: {exc}", exc_info=True)
 
+    try:
+        _write_metric_history(rule_results)
+    except Exception as exc:
+        logger.warning(f"历史指标写入失败（非致命）[{domain}]: {exc}")
+
 
 def _run_log_monitor(check_fn):
     """执行日志采集函数的完整流程：采集 → 评估 → 告警 → 入队 → 更新看板。"""
@@ -126,6 +132,11 @@ def _run_log_monitor(check_fn):
         dashboard.update("log", rule_results)
     except Exception as exc:
         logger.error(f"看板更新异常 [log]: {exc}", exc_info=True)
+
+    try:
+        _write_metric_history(rule_results)
+    except Exception as exc:
+        logger.warning(f"历史指标写入失败（非致命）[log]: {exc}")
 
 
 # --- payment jobs ---
@@ -266,6 +277,38 @@ async def job_check_db_duplicate_error():
     logger.info("[log] 执行 DB 唯一键冲突监控")
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _run_log_monitor, check_db_duplicate_error)
+
+
+def _write_metric_history(rule_results: list) -> None:
+    try:
+        now = int(time.time() * 1000)
+        rows = [
+            (
+                r.metric.domain,
+                r.metric.metric,
+                r.metric.channel_id,
+                float(r.metric.value),
+                r.level,
+                now,
+            )
+            for r in rule_results
+        ]
+        conn = get_monitor_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO monitor_metric_history
+                      (domain, metric, channel_id, value, level, recorded_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    rows,
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning(f"历史指标写入失败（非致命）: {exc}")
 
 
 def _on_job_error(event):

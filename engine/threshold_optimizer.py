@@ -1,7 +1,12 @@
+import argparse
+import concurrent.futures
 import json
 import logging
+import os
+import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from config.db import get_monitor_conn
@@ -163,3 +168,384 @@ def load_all_stats(domain_thresholds: dict) -> dict[str, list[dict]]:
             result[domain].append(stats)
 
     return dict(result)
+
+
+def _call_domain_llm(domain: str, stats_list: list[dict], domain_cfg: dict) -> dict:
+    from utils.llm import get_llm
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    llm = get_llm(temperature=0.3)
+
+    system_prompt = f"""你是一个监控系统阈值优化专家。
+{_DOMAIN_DESCRIPTIONS.get(domain, "")}
+
+你的任务：根据提供的历史统计数据，分析当前阈值是否合理，并给出建议。
+
+输出必须是严格的 JSON，格式如下：
+{{
+  "domain": "{domain}",
+  "recommendations": [
+    {{
+      "metric": "指标名",
+      "action": "adjust|keep|insufficient_data",
+      "current": {{"warning": 数值或null, "critical": 数值或null}},
+      "suggested": {{"warning": 数值或null, "critical": 数值或null}},
+      "reason": "中文理由，说明为什么这样调整，引用具体统计数字"
+    }}
+  ]
+}}
+
+action 枚举：
+- adjust：建议调整阈值，suggested 必须有具体数值
+- keep：当前阈值合理，suggested 与 current 相同
+- insufficient_data：数据不足，无法给出建议
+
+规则：
+1. 只输出 JSON，不要有任何其他文字
+2. 所有数值保留 4 位小数
+3. reason 必须引用统计数据中的具体数字（p95、告警频率等）
+"""
+
+    user_content = f"""域：{domain}
+当前阈值配置：
+{json.dumps(domain_cfg, ensure_ascii=False, indent=2)}
+
+各指标历史统计（过去30天）：
+{json.dumps(stats_list, ensure_ascii=False, indent=2)}
+"""
+
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_content),
+    ])
+
+    raw = response.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw)
+
+
+def _call_cross_domain_llm(domain_reports: list[dict], cross_alerts: list[dict]) -> dict:
+    from utils.llm import get_llm
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    llm = get_llm(temperature=0.3)
+
+    system_prompt = """你是一个监控系统跨域关联分析专家。
+你会收到多个域的阈值调整建议报告，以及跨域同日告警记录。
+
+你的任务：识别不同域之间的告警时序关联，对已有的建议补充注解或警告。
+
+重要规则：
+1. 你只能补充注解，不能推翻已有建议
+2. 注解应说明跨域关联的具体情况（哪两个域在哪天同时告警）
+3. 如果没有明显关联，返回空列表
+4. 只输出 JSON，格式：{"cross_domain_notes": [{"metric": "指标名", "note": "注解内容"}]}
+"""
+
+    user_content = f"""域级分析报告：
+{json.dumps(domain_reports, ensure_ascii=False, indent=2)}
+
+跨域同日告警记录（近30天）：
+{json.dumps(cross_alerts, ensure_ascii=False, indent=2)}
+"""
+
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_content),
+    ])
+
+    raw = response.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw)
+
+
+def load_cross_alert_overlap() -> list[dict]:
+    cutoff = int((time.time() - 30 * 86400) * 1000)
+    conn = get_monitor_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    FROM_UNIXTIME(recorded_at / 1000, '%%Y-%%m-%%d') AS date,
+                    GROUP_CONCAT(DISTINCT domain ORDER BY domain) AS domains,
+                    GROUP_CONCAT(DISTINCT metric ORDER BY metric) AS metrics
+                FROM monitor_metric_history
+                WHERE recorded_at >= %s AND level IN ('warning', 'critical')
+                GROUP BY FROM_UNIXTIME(recorded_at / 1000, '%%Y-%%m-%%d')
+                HAVING COUNT(DISTINCT domain) >= 2
+                ORDER BY date DESC
+                LIMIT 30
+                """,
+                (cutoff,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "date": r["date"],
+            "domains": r["domains"].split(","),
+            "metrics": r["metrics"].split(","),
+        }
+        for r in rows
+    ]
+
+
+def run_llm_analysis(
+    domain_stats: dict[str, list[dict]],
+    domain_thresholds: dict[str, dict],
+) -> tuple[list[dict], dict]:
+    domains = list(domain_stats.keys())
+    domain_reports = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(
+                _call_domain_llm,
+                domain,
+                domain_stats[domain],
+                domain_thresholds.get(domain, {}),
+            ): domain
+            for domain in domains
+        }
+        for future in concurrent.futures.as_completed(futures):
+            domain = futures[future]
+            try:
+                report = future.result()
+                domain_reports.append(report)
+                logger.info(f"[optimizer] 域级分析完成: {domain}")
+            except Exception as exc:
+                logger.error(f"[optimizer] 域级分析失败 [{domain}]: {exc}")
+
+    cross_alerts = load_cross_alert_overlap()
+    cross_result = _call_cross_domain_llm(domain_reports, cross_alerts)
+    logger.info("[optimizer] 跨域综合分析完成")
+
+    return domain_reports, cross_result
+
+
+def save_cache(domain_reports: list[dict], cross_result: dict) -> Path:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    today = datetime.now().strftime("%Y%m%d")
+    path = OUTPUT_DIR / f"optimizer_cache_{today}.json"
+    data = {"domain_reports": domain_reports, "cross_result": cross_result}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    logger.info(f"[optimizer] 缓存已写入: {path}")
+    return path
+
+
+def load_latest_cache() -> tuple[list[dict], dict] | None:
+    files = sorted(OUTPUT_DIR.glob("optimizer_cache_*.json"), reverse=True)
+    if not files:
+        return None
+    with open(files[0], encoding="utf-8") as f:
+        data = json.load(f)
+    logger.info(f"[optimizer] 使用缓存: {files[0]}")
+    return data["domain_reports"], data["cross_result"]
+
+
+def _apply_suggestion(metric: str, suggested: dict) -> None:
+    if metric not in _METRIC_THRESHOLD_MAP:
+        logger.warning(f"[optimizer] 无法定位 {metric} 的配置文件，跳过写入")
+        return
+
+    domain, sub_key, key_map = _METRIC_THRESHOLD_MAP[metric]
+    path = CONFIG_DIR / f"thresholds_{domain}.json"
+
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    for role, value in suggested.items():
+        if value is None:
+            continue
+        for r, jk in key_map.items():
+            if r == role:
+                cfg.setdefault(sub_key, {})[jk] = value
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def run_interactive_cli(domain_reports: list[dict], cross_result: dict) -> None:
+    notes_by_metric: dict[str, str] = {
+        n["metric"]: n["note"]
+        for n in cross_result.get("cross_domain_notes", [])
+    }
+
+    adjustments = [
+        rec
+        for report in domain_reports
+        for rec in report.get("recommendations", [])
+        if rec.get("action") == "adjust"
+    ]
+
+    keeps = [
+        rec
+        for report in domain_reports
+        for rec in report.get("recommendations", [])
+        if rec.get("action") == "keep"
+    ]
+
+    if not adjustments:
+        print("\n所有阈值均在合理范围内，无需调整。")
+        if keeps:
+            print(f"\n以下 {len(keeps)} 个指标无需调整：")
+            for rec in keeps:
+                print(f"  ✓ {rec['metric']}")
+        return
+
+    adopted = []
+    skipped = []
+    edited = []
+    updated_files: set[str] = set()
+
+    total = len(adjustments)
+    for i, rec in enumerate(adjustments, 1):
+        metric = rec["metric"]
+        current = rec.get("current", {})
+        suggested = rec.get("suggested", {})
+        reason = rec.get("reason", "")
+        note = notes_by_metric.get(metric, "")
+
+        print("\n" + "=" * 60)
+        print(f"建议 #{i} / {total}   [{rec.get('domain', '')}] {metric}")
+        print("-" * 60)
+
+        def fmt_thresh(d):
+            parts = []
+            if d.get("warning") is not None:
+                parts.append(f"warning={d['warning']}")
+            if d.get("critical") is not None:
+                parts.append(f"critical={d['critical']}")
+            return "   ".join(parts) if parts else "—"
+
+        print(f"当前阈值   {fmt_thresh(current)}")
+        print(f"建议阈值   {fmt_thresh(suggested)}")
+        print(f"理  由   {reason}")
+        if note:
+            print(f"⚠ 跨域   {note}")
+        print("-" * 60)
+        print("[a] 采纳   [s] 跳过   [e] 编辑数值   [q] 保存退出")
+
+        while True:
+            choice = input("> ").strip().lower()
+            if choice == "a":
+                _apply_suggestion(metric, suggested)
+                adopted.append(metric)
+                if metric in _METRIC_THRESHOLD_MAP:
+                    domain = _METRIC_THRESHOLD_MAP[metric][0]
+                    updated_files.add(f"thresholds_{domain}.json")
+                print("  ✓ 已采纳")
+                break
+            elif choice == "s":
+                skipped.append(metric)
+                print("  — 已跳过")
+                break
+            elif choice == "e":
+                new_suggested = dict(suggested)
+                for role in ("warning", "critical"):
+                    if suggested.get(role) is not None:
+                        val = input(f"  输入新 {role} 值（当前建议 {suggested[role]}，回车跳过）: ").strip()
+                        if val:
+                            try:
+                                new_suggested[role] = float(val)
+                            except ValueError:
+                                print(f"  无效数值，保留原建议值 {suggested[role]}")
+                _apply_suggestion(metric, new_suggested)
+                edited.append(metric)
+                if metric in _METRIC_THRESHOLD_MAP:
+                    domain = _METRIC_THRESHOLD_MAP[metric][0]
+                    updated_files.add(f"thresholds_{domain}.json")
+                print("  ✓ 已编辑并采纳")
+                break
+            elif choice == "q":
+                print("\n已退出，已处理项已保存。")
+                _print_summary(adopted, edited, skipped, updated_files, keeps)
+                return
+            else:
+                print("  请输入 a / s / e / q")
+
+    _print_summary(adopted, edited, skipped, updated_files, keeps)
+
+
+def _print_summary(
+    adopted: list, edited: list, skipped: list,
+    updated_files: set, keeps: list,
+) -> None:
+    print("\n" + "=" * 60)
+    print(f"已采纳 {len(adopted)} 条 / 编辑 {len(edited)} 条 / 跳过 {len(skipped)} 条")
+    if updated_files:
+        print(f"已更新：{', '.join(sorted(updated_files))}")
+    if keeps:
+        print(f"\n以下 {len(keeps)} 个指标无需调整：")
+        for rec in keeps:
+            print(f"  ✓ {rec['metric']}")
+
+
+def _check_min_days() -> bool:
+    cutoff_7d = int((time.time() - 7 * 86400) * 1000)
+    conn = get_monitor_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM monitor_metric_history WHERE recorded_at >= %s",
+                (cutoff_7d,),
+            )
+            row = cur.fetchone()
+            return row["cnt"] >= _MIN_SAMPLES
+    finally:
+        conn.close()
+
+
+def main(interactive: bool = True) -> None:
+    parser = argparse.ArgumentParser(description="阈值优化器")
+    parser.add_argument("--from-cache", action="store_true", help="使用上次 LLM 缓存，跳过重新分析")
+    parser.add_argument("--stats-only", action="store_true", help="只输出统计摘要，不调用 LLM")
+    args = parser.parse_args()
+
+    if args.from_cache:
+        cached = load_latest_cache()
+        if cached is None:
+            print("未找到缓存文件，请先运行完整分析。")
+            sys.exit(1)
+        domain_reports, cross_result = cached
+        run_interactive_cli(domain_reports, cross_result)
+        return
+
+    if not _check_min_days():
+        print("历史数据不足 7 天，优化器需要积累更多数据后再运行。")
+        sys.exit(0)
+
+    domains = ["payment", "game", "risk", "activity", "account", "operation"]
+    domain_thresholds = {d: load_thresholds(d) for d in domains}
+
+    print("正在计算历史统计数据...")
+    domain_stats = load_all_stats(domain_thresholds)
+
+    if args.stats_only:
+        print(json.dumps(domain_stats, ensure_ascii=False, indent=2))
+        return
+
+    print(f"正在调用 LLM 分析（{len(domain_stats)} 个域）...")
+    domain_reports, cross_result = run_llm_analysis(domain_stats, domain_thresholds)
+
+    save_cache(domain_reports, cross_result)
+
+    if not interactive:
+        logger.info("[optimizer] 非交互模式，分析结果已缓存，人工运行 --from-cache 查看")
+        return
+
+    run_interactive_cli(domain_reports, cross_result)
+
+
+if __name__ == "__main__":
+    main()

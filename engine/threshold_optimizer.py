@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config.db import get_monitor_conn
+from engine.threshold_config import load_thresholds
 
 logger = logging.getLogger(__name__)
 

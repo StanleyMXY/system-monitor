@@ -311,6 +311,26 @@ def _write_metric_history(rule_results: list) -> None:
         logger.warning(f"历史指标写入失败（非致命）: {exc}")
 
 
+async def job_cleanup_metric_history():
+    """删除 90 天前的历史指标数据。"""
+    logger.info("[cleanup] 清理过期历史指标")
+    cutoff = int((time.time() - 90 * 86400) * 1000)
+    conn = get_monitor_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM monitor_metric_history WHERE recorded_at < %s",
+                (cutoff,),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+        logger.info(f"[cleanup] 删除 {deleted} 条过期历史记录")
+    except Exception as exc:
+        logger.warning(f"历史记录清理失败（非致命）: {exc}")
+    finally:
+        conn.close()
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -405,6 +425,11 @@ def main():
     scheduler.add_job(job_check_db_duplicate_error, "interval",
                       minutes=log_cfg["low_priority"]["check_interval_minutes"],
                       id="log_db_duplicate_error", max_instances=1)
+
+    # 每日历史清理（凌晨 03:00）
+    scheduler.add_job(job_cleanup_metric_history, "cron",
+                      hour=3, minute=0,
+                      id="cleanup_metric_history", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

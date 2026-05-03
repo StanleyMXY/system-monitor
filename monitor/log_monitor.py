@@ -1,6 +1,27 @@
+import json
 import os
 import time
+from pathlib import Path
 from engine.models import MetricResult
+
+
+_NOISE_RULES_PATH = Path(__file__).parent.parent / "config" / "noise_rules.json"
+
+
+def _load_noise_must_not() -> list[dict]:
+    """加载噪音规则，返回 ES must_not 子句列表。每条规则所有 phrases 同时命中才过滤。"""
+    if not _NOISE_RULES_PATH.exists():
+        return []
+    with open(_NOISE_RULES_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    result = []
+    for rule in data.get("rules", []):
+        phrases = rule.get("must_phrases", [])
+        if phrases:
+            result.append({"bool": {"must": [
+                {"match_phrase": {"message": p}} for p in phrases
+            ]}})
+    return result
 
 
 def _get_prefix() -> str:
@@ -12,8 +33,13 @@ def _count_errors(es, index_pattern: str, must_phrases: list[str], window_minute
     cutoff = f"now-{window_minutes}m"
     must = [{"match_phrase": {"message": p}} for p in must_phrases]
     must.append({"range": {"@timestamp": {"gte": cutoff}}})
+    noise_must_not = _load_noise_must_not()
 
-    count_resp = es.count(index=index_pattern, body={"query": {"bool": {"must": must}}})
+    query = {"bool": {"must": must}}
+    if noise_must_not:
+        query["bool"]["must_not"] = noise_must_not
+
+    count_resp = es.count(index=index_pattern, body={"query": query})
     count = count_resp["count"]
 
     sample = ""
@@ -21,7 +47,7 @@ def _count_errors(es, index_pattern: str, must_phrases: list[str], window_minute
         search_resp = es.search(
             index=index_pattern,
             body={
-                "query": {"bool": {"must": must}},
+                "query": query,
                 "size": 1,
                 "sort": [{"@timestamp": {"order": "desc"}}],
                 "_source": ["message"],

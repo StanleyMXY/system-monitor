@@ -339,6 +339,17 @@ def _run_optimizer_non_interactive():
     optimizer_main(interactive=False)
 
 
+async def job_run_log_analyzer():
+    logger.info("[log_analyzer] 开始每日日志智能分析（非交互模式）")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_log_analyzer_non_interactive)
+
+
+def _run_log_analyzer_non_interactive():
+    from engine.log_analyzer import main as analyzer_main
+    analyzer_main(interactive=False)
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -443,6 +454,11 @@ def main():
     scheduler.add_job(job_run_threshold_optimizer, "cron",
                       day_of_week="sun", hour=2, minute=0,
                       id="threshold_optimizer", max_instances=1)
+
+    # 每日日志智能分析（04:00，非交互）
+    scheduler.add_job(job_run_log_analyzer, "cron",
+                      hour=4, minute=0,
+                      id="log_analyzer", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

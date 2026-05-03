@@ -331,6 +331,17 @@ async def job_cleanup_metric_history():
         conn.close()
 
 
+async def job_run_threshold_optimizer():
+    logger.info("[optimizer] 开始每周阈值优化分析（非交互模式）")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_optimizer_non_interactive)
+
+
+def _run_optimizer_non_interactive():
+    from engine.threshold_optimizer import main as optimizer_main
+    optimizer_main(interactive=False)
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -430,6 +441,11 @@ def main():
     scheduler.add_job(job_cleanup_metric_history, "cron",
                       hour=3, minute=0,
                       id="cleanup_metric_history", max_instances=1)
+
+    # 每周阈值优化（周日 02:00，非交互）
+    scheduler.add_job(job_run_threshold_optimizer, "cron",
+                      day_of_week="sun", hour=2, minute=0,
+                      id="threshold_optimizer", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

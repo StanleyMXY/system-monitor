@@ -280,35 +280,32 @@ async def job_check_db_duplicate_error():
 
 
 def _write_metric_history(rule_results: list) -> None:
+    now = int(time.time() * 1000)
+    rows = [
+        (
+            r.metric.domain,
+            r.metric.metric,
+            r.metric.channel_id,
+            float(r.metric.value),
+            r.level,
+            now,
+        )
+        for r in rule_results
+    ]
+    conn = get_monitor_conn()
     try:
-        now = int(time.time() * 1000)
-        rows = [
-            (
-                r.metric.domain,
-                r.metric.metric,
-                r.metric.channel_id,
-                float(r.metric.value),
-                r.level,
-                now,
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO monitor_metric_history
+                  (domain, metric, channel_id, value, level, recorded_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                rows,
             )
-            for r in rule_results
-        ]
-        conn = get_monitor_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO monitor_metric_history
-                      (domain, metric, channel_id, value, level, recorded_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    rows,
-                )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception as exc:
-        logger.warning(f"历史指标写入失败（非致命）: {exc}")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 async def job_cleanup_metric_history():

@@ -435,11 +435,14 @@ def run_interactive_cli(domain_reports: list[dict], cross_result: dict) -> None:
         if note:
             print(f"⚠ 跨域   {note}")
         print("-" * 60)
-        print("[a] 采纳   [s] 跳过   [e] 编辑数值   [q] 保存退出")
+        print("[a] 采纳   [s] 跳过   [e] 编辑数值   [d] 完整信息   [q] 保存退出")
 
         while True:
             choice = input("> ").strip().lower()
-            if choice == "a":
+            if choice == "d":
+                print(json.dumps(rec, ensure_ascii=False, indent=2))
+                continue
+            elif choice == "a":
                 _apply_suggestion(metric, suggested)
                 adopted.append(metric)
                 if metric in _METRIC_THRESHOLD_MAP:
@@ -508,10 +511,13 @@ def _check_min_days() -> bool:
 
 
 def main(interactive: bool = True) -> None:
-    parser = argparse.ArgumentParser(description="阈值优化器")
-    parser.add_argument("--from-cache", action="store_true", help="使用上次 LLM 缓存，跳过重新分析")
-    parser.add_argument("--stats-only", action="store_true", help="只输出统计摘要，不调用 LLM")
-    args = parser.parse_args()
+    if interactive:
+        parser = argparse.ArgumentParser(description="阈值优化器")
+        parser.add_argument("--from-cache", action="store_true", help="使用上次 LLM 缓存，跳过重新分析")
+        parser.add_argument("--stats-only", action="store_true", help="只输出统计摘要，不调用 LLM")
+        args = parser.parse_args()
+    else:
+        args = argparse.Namespace(from_cache=False, stats_only=False)
 
     if args.from_cache:
         cached = load_latest_cache()

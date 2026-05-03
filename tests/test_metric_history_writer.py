@@ -35,9 +35,11 @@ def test_write_metric_history_inserts_all_results():
     assert rows[1][2] == 3
 
 
-def test_write_metric_history_failure_does_not_raise():
+def test_write_metric_history_raises_on_db_failure():
+    """_write_metric_history 遇到 DB 异常时应向上抛，由调用方捕获。"""
     results = [make_rule_result("payment", "recharge_success_rate", 0.92, "ok")]
 
     with patch("scheduler.get_monitor_conn", side_effect=Exception("DB down")):
         from scheduler import _write_metric_history
-        _write_metric_history(results)
+        with pytest.raises(Exception, match="DB down"):
+            _write_metric_history(results)

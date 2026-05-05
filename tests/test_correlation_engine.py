@@ -122,3 +122,30 @@ def test_correlate_suspected_when_no_chain_match(tmp_path, monkeypatch):
     assert cr.confidence == "suspected"
     assert cr.cause_domain == "game"
     assert "待核查" in cr.message
+
+
+def test_correlate_suspected_when_chains_file_missing(tmp_path, monkeypatch):
+    import engine.correlation_engine as ce
+    monkeypatch.setattr(ce, "_CHAINS_PATH", tmp_path / "nonexistent.json")
+
+    now_ms = int(time.time() * 1000)
+    other_ts = now_ms - 8 * 60 * 1000
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_cursor.__exit__ = MagicMock(return_value=False)
+    mock_cursor.description = [("domain",), ("metric",), ("channel_id",),
+                                ("value",), ("level",), ("recorded_at",)]
+    mock_cursor.fetchall.return_value = [
+        ("log", "mq_route_error_count", None, 10.0, "critical", other_ts)
+    ]
+    mock_conn.cursor.return_value = mock_cursor
+
+    result = _make_result(domain="payment", metric="recharge_success_rate", level="warning")
+    with patch("engine.correlation_engine.get_monitor_conn", return_value=mock_conn):
+        cr = correlate(result)
+
+    assert cr.confidence == "suspected"
+    assert cr.cause_domain == "log"
+    assert "待核查" in cr.message

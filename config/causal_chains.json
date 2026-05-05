@@ -1,0 +1,47 @@
+[
+  {
+    "cause": {"domain": "log", "metric": "mq_route_error_count"},
+    "effects": [
+      {"domain": "game", "metric": "game_transfer_fail_rate"},
+      {"domain": "payment", "metric": "recharge_success_rate"}
+    ],
+    "description": "MQ 路由故障 → 游戏转账/支付成功率下降"
+  },
+  {
+    "cause": {"domain": "log", "metric": "db_shard_error_count"},
+    "effects": [
+      {"domain": "payment", "metric": "recharge_success_rate"},
+      {"domain": "payment", "metric": "recharge_pending_count"}
+    ],
+    "description": "DB 分表故障 → 充值失败/积压"
+  },
+  {
+    "cause": {"domain": "log", "metric": "mq_route_error_count"},
+    "effects": [
+      {"domain": "payment", "metric": "recharge_pending_count"},
+      {"domain": "payment", "metric": "withdraw_queue_count"}
+    ],
+    "description": "MQ 路由故障 → 积压订单增加"
+  },
+  {
+    "cause": {"domain": "game", "metric": "game_transfer_fail_rate"},
+    "effects": [
+      {"domain": "payment", "metric": "recharge_success_rate"}
+    ],
+    "description": "游戏转账失败 → 支付成功率下降"
+  },
+  {
+    "cause": {"domain": "log", "metric": "db_shard_error_count"},
+    "effects": [
+      {"domain": "game", "metric": "game_transfer_fail_rate"}
+    ],
+    "description": "DB 分表故障 → 游戏转账失败"
+  },
+  {
+    "cause": {"domain": "risk", "metric": "risk_alert_backlog_count"},
+    "effects": [
+      {"domain": "payment", "metric": "withdraw_queue_count"}
+    ],
+    "description": "风控积压 → 提现审核积压"
+  }
+]

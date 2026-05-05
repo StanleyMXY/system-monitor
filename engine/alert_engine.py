@@ -23,7 +23,14 @@ def handle(result: RuleResult) -> None:
     if result.level == "ok":
         return
 
-    cr: CorrelationResult = correlate(result)
+    try:
+        cr: CorrelationResult = correlate(result)
+    except Exception as exc:
+        logger.warning(f"correlation_engine 异常，跳过关联分析: {exc}")
+        cr = CorrelationResult(
+            confidence="none", cause_domain=None, cause_metric=None,
+            cause_ts=None, lead_minutes=None, message="",
+        )
 
     entry = {
         "ts": int(time.time()),

@@ -350,6 +350,17 @@ def _run_log_analyzer_non_interactive():
     analyzer_main(interactive=False)
 
 
+async def job_run_root_cause_analyzer():
+    logger.info("[root_cause_analyzer] 开始每日根因分析（非交互模式）")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_root_cause_analyzer_non_interactive)
+
+
+def _run_root_cause_analyzer_non_interactive():
+    from engine.root_cause_analyzer import main as analyzer_main
+    analyzer_main(interactive=False)
+
+
 def _on_job_error(event):
     logger.error(f"调度任务异常: {event.job_id} — {event.exception}")
 
@@ -459,6 +470,11 @@ def main():
     scheduler.add_job(job_run_log_analyzer, "cron",
                       hour=4, minute=0,
                       id="log_analyzer", max_instances=1)
+
+    # 每日根因分析（05:00，非交互）
+    scheduler.add_job(job_run_root_cause_analyzer, "cron",
+                      hour=5, minute=0,
+                      id="root_cause_analyzer", max_instances=1)
 
     dashboard.start()
     logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")

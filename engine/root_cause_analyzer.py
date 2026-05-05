@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import date
@@ -27,7 +28,7 @@ def _load_metric_history() -> list[dict]:
                 """
                 SELECT domain, metric, channel_id, value, level, recorded_at
                 FROM monitor_metric_history
-                WHERE level != 'ok' AND recorded_at >= %s
+                WHERE level IN ('warning', 'critical') AND recorded_at >= %s
                 ORDER BY recorded_at ASC
                 """,
                 (cutoff_ms,),
@@ -159,14 +160,14 @@ def _run_llm_analysis(history: list[dict], alerts: list[dict],
     ])
 
     raw = response.content.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+    if raw.endswith("```"):
+        raw = raw[:-3].strip()
 
     return json.loads(raw)
 
 
-def main(interactive: bool = True) -> None:
+def main(interactive: bool = True, from_cache: bool = False) -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -180,7 +181,7 @@ def main(interactive: bool = True) -> None:
         logger.info(f"告警数不足 {_MIN_ALERTS} 条（当前 {len(alerts)} 条），跳过分析")
         return
 
-    use_cache = "--from-cache" in sys.argv
+    use_cache = from_cache
     if use_cache and cache_path.exists():
         logger.info("使用缓存结果，跳过 LLM 调用")
         with open(cache_path, encoding="utf-8") as f:
@@ -235,4 +236,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="根因分析器")
     parser.add_argument("--from-cache", action="store_true", help="跳过 LLM，复用当日缓存")
     args = parser.parse_args()
-    main(interactive=True)
+    main(interactive=True, from_cache=args.from_cache)

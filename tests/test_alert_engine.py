@@ -1,7 +1,16 @@
 import json
 import logging
+from unittest.mock import patch
 from engine.models import MetricResult, RuleResult
 from engine.alert_engine import handle
+from engine.correlation_engine import CorrelationResult
+
+
+def _no_correlation():
+    return CorrelationResult(
+        confidence="none", cause_domain=None, cause_metric=None,
+        cause_ts=None, lead_minutes=None, message="",
+    )
 
 
 def make_rule_result(level, action, metric_name="recharge_success_rate", value=0.5, threshold=0.8):
@@ -19,15 +28,17 @@ def test_handle_ok_does_nothing(caplog):
 
 def test_handle_warning_logs(caplog):
     result = make_rule_result("warning", "alert")
-    with caplog.at_level(logging.WARNING):
-        handle(result)
+    with patch("engine.alert_engine.correlate", return_value=_no_correlation()):
+        with caplog.at_level(logging.WARNING):
+            handle(result)
     assert "WARNING" in caplog.text or "warning" in caplog.text.lower()
 
 
 def test_handle_critical_logs(caplog):
     result = make_rule_result("critical", "enqueue")
-    with caplog.at_level(logging.CRITICAL):
-        handle(result)
+    with patch("engine.alert_engine.correlate", return_value=_no_correlation()):
+        with caplog.at_level(logging.CRITICAL):
+            handle(result)
     assert "CRITICAL" in caplog.text or "critical" in caplog.text.lower()
 
 
@@ -37,7 +48,8 @@ def test_handle_warning_writes_to_file(tmp_path, monkeypatch):
     monkeypatch.setattr(ae, "ALERT_LOG_PATH", log_file)
 
     result = make_rule_result("warning", "alert", value=0.75, threshold=0.80)
-    handle(result)
+    with patch("engine.alert_engine.correlate", return_value=_no_correlation()):
+        handle(result)
 
     content = log_file.read_text(encoding="utf-8")
     data = json.loads(content.strip())

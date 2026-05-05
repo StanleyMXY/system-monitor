@@ -1,12 +1,15 @@
-# engine/alert_engine.py
-# 告警引擎：Phase 1 实现结构化日志输出 + 写 logs/alerts.log
-# Phase 2 接入 Telegram 时只扩展此模块，接口不变
 import json
 import logging
 import time
 from decimal import Decimal
 from pathlib import Path
+
 from engine.models import RuleResult
+from engine.correlation_engine import correlate, CorrelationResult
+
+logger = logging.getLogger(__name__)
+
+ALERT_LOG_PATH = Path(__file__).parent.parent / "logs" / "alerts.log"
 
 
 class _SafeEncoder(json.JSONEncoder):
@@ -15,14 +18,12 @@ class _SafeEncoder(json.JSONEncoder):
             return float(o)
         return super().default(o)
 
-logger = logging.getLogger(__name__)
-
-ALERT_LOG_PATH = Path(__file__).parent.parent / "logs" / "alerts.log"
-
 
 def handle(result: RuleResult) -> None:
     if result.level == "ok":
         return
+
+    cr: CorrelationResult = correlate(result)
 
     entry = {
         "ts": int(time.time()),
@@ -34,6 +35,16 @@ def handle(result: RuleResult) -> None:
         "channel_id": result.metric.channel_id,
         "message": result.message,
     }
+
+    if cr.confidence != "none":
+        entry["correlation"] = {
+            "confidence": cr.confidence,
+            "cause_domain": cr.cause_domain,
+            "cause_metric": cr.cause_metric,
+            "cause_ts": cr.cause_ts,
+            "lead_minutes": cr.lead_minutes,
+            "message": cr.message,
+        }
 
     if result.level == "warning":
         logger.warning(result.message)

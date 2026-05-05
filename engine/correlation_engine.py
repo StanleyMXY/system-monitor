@@ -23,8 +23,11 @@ class CorrelationResult:
 def _load_chains() -> list[dict]:
     if not _CHAINS_PATH.exists():
         return []
-    with open(_CHAINS_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(_CHAINS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return []
 
 
 def correlate(result: RuleResult) -> CorrelationResult:
@@ -106,5 +109,4 @@ def _fetch_recent_alerts(conn, exclude_domain: str,
             """,
             (exclude_domain, start_ms, end_ms),
         )
-        cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return list(cur.fetchall())

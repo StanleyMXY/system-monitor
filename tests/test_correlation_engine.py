@@ -1,6 +1,5 @@
 import json
 import time
-from dataclasses import asdict
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -60,10 +59,9 @@ def test_correlate_known_chain_match(tmp_path, monkeypatch):
     mock_cursor = MagicMock()
     mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
     mock_cursor.__exit__ = MagicMock(return_value=False)
-    mock_cursor.description = [("domain",), ("metric",), ("channel_id",),
-                                ("value",), ("level",), ("recorded_at",)]
     mock_cursor.fetchall.return_value = [
-        ("log", "mq_route_error_count", None, 15.0, "critical", cause_ts)
+        {"domain": "log", "metric": "mq_route_error_count", "channel_id": None,
+         "value": 15.0, "level": "critical", "recorded_at": cause_ts}
     ]
     mock_conn.cursor.return_value = mock_cursor
 
@@ -85,8 +83,6 @@ def test_correlate_no_history_returns_none():
     mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
     mock_cursor.__exit__ = MagicMock(return_value=False)
     mock_cursor.fetchall.return_value = []
-    mock_cursor.description = [("domain",), ("metric",), ("channel_id",),
-                                ("value",), ("level",), ("recorded_at",)]
     mock_conn.cursor.return_value = mock_cursor
 
     with patch("engine.correlation_engine.get_monitor_conn", return_value=mock_conn):
@@ -108,10 +104,9 @@ def test_correlate_suspected_when_no_chain_match(tmp_path, monkeypatch):
     mock_cursor = MagicMock()
     mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
     mock_cursor.__exit__ = MagicMock(return_value=False)
-    mock_cursor.description = [("domain",), ("metric",), ("channel_id",),
-                                ("value",), ("level",), ("recorded_at",)]
     mock_cursor.fetchall.return_value = [
-        ("game", "game_transfer_fail_rate", None, 0.3, "warning", other_ts)
+        {"domain": "game", "metric": "game_transfer_fail_rate", "channel_id": None,
+         "value": 0.3, "level": "warning", "recorded_at": other_ts}
     ]
     mock_conn.cursor.return_value = mock_cursor
 
@@ -135,10 +130,9 @@ def test_correlate_suspected_when_chains_file_missing(tmp_path, monkeypatch):
     mock_cursor = MagicMock()
     mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
     mock_cursor.__exit__ = MagicMock(return_value=False)
-    mock_cursor.description = [("domain",), ("metric",), ("channel_id",),
-                                ("value",), ("level",), ("recorded_at",)]
     mock_cursor.fetchall.return_value = [
-        ("log", "mq_route_error_count", None, 10.0, "critical", other_ts)
+        {"domain": "log", "metric": "mq_route_error_count", "channel_id": None,
+         "value": 10.0, "level": "critical", "recorded_at": other_ts}
     ]
     mock_conn.cursor.return_value = mock_cursor
 

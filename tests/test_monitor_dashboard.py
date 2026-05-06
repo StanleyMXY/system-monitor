@@ -33,9 +33,9 @@ def test_update_tracks_domain_summary(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard, "_html_path", tmp_path / "dashboard.html")
 
     results = [
-        make_rule_result("critical", "enqueue"),
-        make_rule_result("warning", "alert"),
-        make_rule_result("ok", "none"),
+        make_rule_result("critical", "enqueue", metric="recharge_success_rate"),
+        make_rule_result("warning", "alert", metric="channel_balance"),
+        make_rule_result("ok", "none", metric="withdraw_queue_count"),
     ]
     dashboard.update("payment", results)
 

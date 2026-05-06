@@ -36,10 +36,10 @@ class MonitorDashboard:
     def __init__(self, port: int = 8080):
         self._port = port
         self._html_path = _OUTPUT_DIR / "monitor_dashboard.html"
-        self.domain_results: dict[str, list[RuleResult]] = {}
+        self.domain_results: dict[str, dict[tuple, RuleResult]] = {}
         self.recent_alerts: deque[RuleResult] = deque(maxlen=50)
         self.domain_alerts: dict[str, deque[RuleResult]] = {
-            d: deque(maxlen=20) for d in _DOMAIN_ORDER
+            d: deque(maxlen=100) for d in _DOMAIN_ORDER
         }
         self._last_update: str = "--"
         self._server: http.server.HTTPServer | None = None
@@ -64,9 +64,13 @@ class MonitorDashboard:
         thread.start()
 
     def update(self, domain: str, results: list[RuleResult]) -> None:
-        self.domain_results[domain] = results
+        if domain not in self.domain_results:
+            self.domain_results[domain] = {}
+        for r in results:
+            key = (r.metric.metric, r.metric.channel_id)
+            self.domain_results[domain][key] = r
         if domain not in self.domain_alerts:
-            self.domain_alerts[domain] = deque(maxlen=20)
+            self.domain_alerts[domain] = deque(maxlen=100)
         for r in results:
             if r.level != "ok":
                 self.recent_alerts.appendleft(r)
@@ -75,7 +79,7 @@ class MonitorDashboard:
         self._render()
 
     def get_domain_summary(self, domain: str) -> dict:
-        results = self.domain_results.get(domain, [])
+        results = self.domain_results.get(domain, {}).values()
         return {
             "critical": sum(1 for r in results if r.level == "critical"),
             "warning": sum(1 for r in results if r.level == "warning"),

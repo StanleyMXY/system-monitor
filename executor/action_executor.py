@@ -29,6 +29,16 @@ def enqueue_action(
         with conn.cursor() as cur:
             cur.execute(
                 """
+                SELECT id FROM monitor_action_queue
+                WHERE domain=%s AND action_type=%s AND target_id<=>%s AND status=0
+                LIMIT 1
+                """,
+                (domain, action_type, target_id),
+            )
+            if cur.fetchone():
+                return
+            cur.execute(
+                """
                 INSERT INTO monitor_action_queue
                   (domain, action_type, target_id, payload, status, priority,
                    triggered_by, metric_value, threshold, created_at, updated_at)

@@ -89,7 +89,7 @@ class MonitorDashboard:
         }
 
     def _load_pending_suggestions(self) -> dict:
-        result = {"threshold": [], "chains": [], "date": "--"}
+        result = {"threshold": [], "chains": [], "log_patterns": [], "date": "--"}
 
         optimizer_files = sorted(_OUTPUT_DIR.glob("optimizer_cache_*.json"), reverse=True)
         if optimizer_files:
@@ -123,6 +123,23 @@ class MonitorDashboard:
             except Exception:
                 pass
 
+        log_files = sorted(_OUTPUT_DIR.glob("log_analyzer_cache_*.json"), reverse=True)
+        if log_files:
+            try:
+                with open(log_files[0], encoding="utf-8") as f:
+                    data = json.load(f)
+                for p in data.get("patterns", []):
+                    if p.get("type") in ("new_rule", "noise"):
+                        result["log_patterns"].append({
+                            "type": p.get("type"),
+                            "term": p.get("term", ""),
+                            "description": p.get("description", ""),
+                            "priority": p.get("priority", ""),
+                            "reason": p.get("reason", ""),
+                        })
+            except Exception:
+                pass
+
         return result
 
     def _render(self) -> None:
@@ -131,7 +148,8 @@ class MonitorDashboard:
         suggestions = self._load_pending_suggestions()
         threshold_count = len(suggestions["threshold"])
         chain_count = len(suggestions["chains"])
-        total = threshold_count + chain_count
+        log_count = len(suggestions["log_patterns"])
+        total = threshold_count + chain_count + log_count
 
         # 域状态卡片
         cards_html = ""
@@ -166,7 +184,7 @@ class MonitorDashboard:
             suggest_border = _SUGGEST_COLOR
             suggest_status = f"◈ {total} 条待审批"
             suggest_color = _SUGGEST_COLOR
-            suggest_sub = f"{threshold_count} 阈值调整 &nbsp;|&nbsp; {chain_count} 新因果链"
+            suggest_sub = f"{threshold_count} 阈值调整 &nbsp;|&nbsp; {chain_count} 新因果链 &nbsp;|&nbsp; {log_count} 日志模式"
         else:
             suggest_border = "#333"
             suggest_status = "◇ 暂无建议"
@@ -276,8 +294,9 @@ selectDomain(initDomain);
     def _render_detail_page(self, suggestions: dict) -> None:
         threshold_items = suggestions.get("threshold", [])
         chain_items = suggestions.get("chains", [])
+        log_items = suggestions.get("log_patterns", [])
         date = suggestions.get("date", "--")
-        total = len(threshold_items) + len(chain_items)
+        total = len(threshold_items) + len(chain_items) + len(log_items)
 
         # 阈值建议表格
         if threshold_items:
@@ -336,6 +355,34 @@ selectDomain(initDomain);
         else:
             chains_html = "<p style='color:#555;margin-top:24px'>暂无新因果链建议</p>"
 
+        # 日志模式建议
+        _type_label = {"new_rule": "新建规则", "noise": "确认噪音"}
+        _type_color = {"new_rule": "#27ae60", "noise": "#f5a623"}
+        if log_items:
+            rows = ""
+            for item in log_items:
+                t = item.get("type", "")
+                label = _type_label.get(t, t)
+                color = _type_color.get(t, "#aaa")
+                rows += f"""<tr>
+                  <td style="color:{color}">{label}</td>
+                  <td style="color:#f5a623">{item.get('priority','')}</td>
+                  <td style="color:#ccc;font-size:11px">{item.get('term','')}</td>
+                  <td style="color:#aaa">{item.get('description','')}</td>
+                  <td style="color:#666">{item.get('reason','')}</td>
+                </tr>"""
+            log_html = f"""
+            <h2 style="color:#aaa;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 12px">
+              日志模式分析（{len(log_items)} 条待确认）
+            </h2>
+            <table>
+              <thead><tr><th>类型</th><th>优先级</th><th>模式</th><th>描述</th><th>理由</th></tr></thead>
+              <tbody>{rows}</tbody>
+            </table>
+            <div class="cli">确认: python -m engine.log_analyzer --from-cache</div>"""
+        else:
+            log_html = "<p style='color:#555;margin-top:24px'>暂无日志模式待确认</p>"
+
         html = f"""<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -363,6 +410,7 @@ selectDomain(initDomain);
   </div>
   {threshold_html}
   {chains_html}
+  {log_html}
 </body>
 </html>"""
 

@@ -146,6 +146,13 @@ def _run_llm_analysis(history: list[dict], alerts: list[dict],
     model_name = os.getenv("LLM_MODEL", "qwen3-max")
     llm = init_chat_model(model_name)
 
+    from engine.suggestions_store import load_rejected_context
+    rejected = load_rejected_context("root_cause_analyzer", 30)
+    system = _SYSTEM_PROMPT
+    if rejected:
+        lines = "\n".join(f"- [{r['metric_key']}]（已拒绝）" for r in rejected)
+        system += f"\n\n以下因果链建议已被人工拒绝，请勿重复：\n{lines}"
+
     payload = {
         "alert_count": len(alerts),
         "metric_history_sample": history[:50],
@@ -155,7 +162,7 @@ def _run_llm_analysis(history: list[dict], alerts: list[dict],
     user_msg = f"请分析以下监控数据：\n\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
 
     response = llm.invoke([
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system},
         {"role": "user", "content": user_msg},
     ])
 
@@ -210,6 +217,26 @@ def main(interactive: bool = True, from_cache: bool = False) -> None:
     _save_report_to_db(today, len(alerts), chain_count, report, suggested if suggested else None)
     logger.info(f"报告已写入 DB（analysis_date={today}）")
 
+    from engine.suggestions_store import insert_suggestions
+    if suggested:
+        chain_rows = []
+        for ch in suggested:
+            cause = ch.get("cause", {})
+            effect_list = ch.get("effects", [ch])
+            first_effect = effect_list[0] if effect_list else {}
+            metric_key = (
+                f"{cause.get('domain','')}.{cause.get('metric','')}→"
+                f"{first_effect.get('domain','')}.{first_effect.get('metric','')}"
+            )[:128]
+            chain_rows.append({
+                "source": "root_cause_analyzer",
+                "analysis_date": today.isoformat(),
+                "item_type": "new_chain",
+                "metric_key": metric_key,
+                "payload": ch,
+            })
+        insert_suggestions(chain_rows)
+
     if summary:
         print(f"\n=== 今日根因分析摘要 ===\n{summary}\n")
     if identified:
@@ -220,14 +247,7 @@ def main(interactive: bool = True, from_cache: bool = False) -> None:
                   f"(提前 {ch.get('lead_minutes','?')} 分钟)")
 
     if interactive and suggested:
-        print(f"\nLLM 建议新增 {len(suggested)} 条因果链：")
-        for i, ch in enumerate(suggested):
-            print(f"  [{i+1}] {ch.get('description', json.dumps(ch, ensure_ascii=False))}")
-        choice = input("\n[a] 全部采纳并写入 causal_chains.json  [q] 退出: ").strip().lower()
-        if choice == "a":
-            _save_suggested_chains(suggested)
-            logger.info(f"已采纳 {len(suggested)} 条建议因果链")
-            print("已写入 config/causal_chains.json")
+        print(f"\nLLM 建议新增 {len(suggested)} 条因果链，已写入 DB，可通过 Web 审批或运行 --from-cache 在 CLI 采纳")
     elif not interactive and suggested:
         logger.info(f"非交互模式：{len(suggested)} 条建议因果链已存入 DB，待人工采纳")
 

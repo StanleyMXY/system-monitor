@@ -145,11 +145,16 @@ def load_all_stats(domain_thresholds: dict) -> dict[str, list[dict]]:
     return dict(result)
 
 
-def _call_domain_llm(domain: str, stats_list: list[dict], domain_cfg: dict) -> dict:
+def _call_domain_llm(domain: str, stats_list: list[dict], domain_cfg: dict, rejected: list = None) -> dict:
     from utils.llm import get_llm
     from langchain_core.messages import SystemMessage, HumanMessage
 
     llm = get_llm(temperature=0.3)
+
+    rejected_section = ""
+    if rejected:
+        lines = "\n".join(f"- [{r['metric_key']}]（已拒绝）" for r in rejected)
+        rejected_section = f"\n\n以下建议已被人工拒绝，请勿重复建议：\n{lines}"
 
     system_prompt = f"""你是一个监控系统阈值优化专家。
 {_DOMAIN_DESCRIPTIONS.get(domain, "")}
@@ -178,7 +183,7 @@ action 枚举：
 规则：
 1. 只输出 JSON，不要有任何其他文字
 2. 所有数值保留 4 位小数
-3. reason 必须引用统计数据中的具体数字（p95、告警频率等）
+3. reason 必须引用统计数据中的具体数字（p95、告警频率等）{rejected_section}
 """
 
     user_content = f"""域：{domain}
@@ -278,6 +283,9 @@ def run_llm_analysis(
     domain_stats: dict[str, list[dict]],
     domain_thresholds: dict[str, dict],
 ) -> tuple[list[dict], dict]:
+    from engine.suggestions_store import load_rejected_context
+    rejected = load_rejected_context("threshold_optimizer", 30)
+
     domains = list(domain_stats.keys())
     domain_reports = []
 
@@ -288,6 +296,7 @@ def run_llm_analysis(
                 domain,
                 domain_stats[domain],
                 domain_thresholds.get(domain, {}),
+                rejected=rejected,
             ): domain
             for domain in domains
         }
@@ -521,8 +530,24 @@ def main(interactive: bool = True) -> None:
 
     save_cache(domain_reports, cross_result)
 
+    from datetime import date as _date
+    from engine.suggestions_store import insert_suggestions
+    today_str = _date.today().isoformat()
+    rows = []
+    for report in domain_reports:
+        for rec in report.get("recommendations", []):
+            if rec.get("action") == "adjust":
+                rows.append({
+                    "source": "threshold_optimizer",
+                    "analysis_date": today_str,
+                    "item_type": "adjust",
+                    "metric_key": rec["metric"],
+                    "payload": rec,
+                })
+    insert_suggestions(rows)
+
     if not interactive:
-        logger.info("[optimizer] 非交互模式，分析结果已缓存，人工运行 --from-cache 查看")
+        logger.info("[optimizer] 非交互模式，建议已写入 DB，请通过 Web 审批")
         return
 
     run_interactive_cli(domain_reports, cross_result)

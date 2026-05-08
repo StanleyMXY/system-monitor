@@ -157,6 +157,12 @@ def analyze_with_llm(candidates: list[dict]) -> list[dict]:
 3. suggested_phrases 应该是能精准匹配该问题的关键词，不要太宽泛
 """
 
+    from engine.suggestions_store import load_rejected_context
+    rejected = load_rejected_context("log_analyzer", 14)
+    if rejected:
+        lines = "\n".join(f"- [{r['metric_key'][:60]}]（已拒绝）" for r in rejected)
+        system_prompt += f"\n\n以下模式已被人工拒绝，请勿重复建议：\n{lines}"
+
     user_content = f"""候选模式列表（来自近24h日志 significant_terms 聚合）：
 {json.dumps(candidates, ensure_ascii=False, indent=2)}
 """
@@ -405,8 +411,24 @@ def main(interactive: bool = True) -> None:
 
     save_cache(candidates, patterns)
 
+    from datetime import date as _date
+    from engine.suggestions_store import insert_suggestions
+    today_str = _date.today().isoformat()
+    samples_by_term = {c["term"]: c.get("samples", []) for c in candidates}
+    rows = []
+    for p in patterns:
+        if p.get("type") in ("new_rule", "noise"):
+            rows.append({
+                "source": "log_analyzer",
+                "analysis_date": today_str,
+                "item_type": p["type"],
+                "metric_key": p.get("term", "")[:128],
+                "payload": {**p, "samples": samples_by_term.get(p.get("term", ""), [])},
+            })
+    insert_suggestions(rows)
+
     if not interactive:
-        logger.info(f"[log_analyzer] 非交互模式完成，发现 {len(patterns)} 个模式，结果已缓存")
+        logger.info(f"[log_analyzer] 非交互模式完成，发现 {len(patterns)} 个模式，建议已写入 DB")
         return
 
     run_interactive_cli(candidates, patterns)

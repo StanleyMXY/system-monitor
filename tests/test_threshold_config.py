@@ -25,3 +25,18 @@ def test_load_thresholds_raises_on_missing_file(tmp_path, monkeypatch):
 
     with pytest.raises(FileNotFoundError):
         tc.load_thresholds("nonexistent")
+
+
+def test_metric_threshold_map_has_payment_metrics():
+    from engine.threshold_config import METRIC_THRESHOLD_MAP
+    assert "recharge_success_rate" in METRIC_THRESHOLD_MAP
+    domain, sub_key, key_map = METRIC_THRESHOLD_MAP["recharge_success_rate"]
+    assert domain == "payment"
+    assert sub_key == "recharge"
+    assert "warning" in key_map
+
+
+def test_metric_threshold_map_covers_all_domains():
+    from engine.threshold_config import METRIC_THRESHOLD_MAP
+    domains = {v[0] for v in METRIC_THRESHOLD_MAP.values()}
+    assert domains == {"payment", "game", "risk", "activity", "account", "operation"}

@@ -89,66 +89,41 @@ class MonitorDashboard:
         }
 
     def _load_pending_suggestions(self) -> dict:
-        result = {"threshold": [], "chains": [], "log_patterns": [], "date": "--"}
-
-        optimizer_files = sorted(_OUTPUT_DIR.glob("optimizer_cache_*.json"), reverse=True)
-        if optimizer_files:
+        result = {"threshold": 0, "chains": 0, "log_patterns": 0, "date": "--"}
+        try:
+            from config.db import get_monitor_conn
+            conn = get_monitor_conn()
             try:
-                with open(optimizer_files[0], encoding="utf-8") as f:
-                    data = json.load(f)
-                result["date"] = optimizer_files[0].stem.replace("optimizer_cache_", "")
-                for domain_report in data.get("domain_reports", []):
-                    for rec in domain_report.get("recommendations", []):
-                        if rec.get("action") == "adjust":
-                            result["threshold"].append({
-                                "metric": rec.get("metric", ""),
-                                "current": rec.get("current", {}),
-                                "suggested": rec.get("suggested", {}),
-                                "reason": rec.get("reason", ""),
-                            })
-            except Exception:
-                pass
-
-        rca_files = sorted(_OUTPUT_DIR.glob("root_cause_*.json"), reverse=True)
-        if rca_files:
-            try:
-                with open(rca_files[0], encoding="utf-8") as f:
-                    data = json.load(f)
-                for ch in data.get("analysis", {}).get("suggested_new_chains", []):
-                    result["chains"].append({
-                        "description": ch.get("description", ""),
-                        "cause": ch.get("cause", {}),
-                        "effects": ch.get("effects", []),
-                    })
-            except Exception:
-                pass
-
-        log_files = sorted(_OUTPUT_DIR.glob("log_analyzer_cache_*.json"), reverse=True)
-        if log_files:
-            try:
-                with open(log_files[0], encoding="utf-8") as f:
-                    data = json.load(f)
-                for p in data.get("patterns", []):
-                    if p.get("type") in ("new_rule", "noise"):
-                        result["log_patterns"].append({
-                            "type": p.get("type"),
-                            "term": p.get("term", ""),
-                            "description": p.get("description", ""),
-                            "priority": p.get("priority", ""),
-                            "reason": p.get("reason", ""),
-                        })
-            except Exception:
-                pass
-
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT source, COUNT(*) AS cnt
+                        FROM monitor_suggestions
+                        WHERE status = 0
+                        GROUP BY source
+                        """,
+                    )
+                    rows = cur.fetchall()
+            finally:
+                conn.close()
+            for r in rows:
+                if r["source"] == "threshold_optimizer":
+                    result["threshold"] = r["cnt"]
+                elif r["source"] == "root_cause_analyzer":
+                    result["chains"] = r["cnt"]
+                elif r["source"] == "log_analyzer":
+                    result["log_patterns"] = r["cnt"]
+        except Exception:
+            pass
         return result
 
     def _render(self) -> None:
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         suggestions = self._load_pending_suggestions()
-        threshold_count = len(suggestions["threshold"])
-        chain_count = len(suggestions["chains"])
-        log_count = len(suggestions["log_patterns"])
+        threshold_count = suggestions["threshold"]
+        chain_count = suggestions["chains"]
+        log_count = suggestions["log_patterns"]
         total = threshold_count + chain_count + log_count
 
         # 域状态卡片
@@ -292,93 +267,41 @@ selectDomain(initDomain);
         self._render_detail_page(suggestions)
 
     def _render_detail_page(self, suggestions: dict) -> None:
-        threshold_items = suggestions.get("threshold", [])
-        chain_items = suggestions.get("chains", [])
-        log_items = suggestions.get("log_patterns", [])
+        threshold_count = suggestions.get("threshold", 0)
+        chain_count = suggestions.get("chains", 0)
+        log_count = suggestions.get("log_patterns", 0)
         date = suggestions.get("date", "--")
-        total = len(threshold_items) + len(chain_items) + len(log_items)
+        total = threshold_count + chain_count + log_count
 
-        # 阈值建议表格
-        if threshold_items:
-            rows = ""
-            for item in threshold_items:
-                curr = item["current"]
-                sugg = item["suggested"]
-
-                def fmt(d):
-                    parts = []
-                    if d.get("warning") is not None:
-                        parts.append(f"warning: {d['warning']}")
-                    if d.get("critical") is not None:
-                        parts.append(f"critical: {d['critical']}")
-                    return " / ".join(parts) if parts else "—"
-
-                rows += f"""<tr>
-                  <td style="color:#f5a623">{item['metric']}</td>
-                  <td>{fmt(curr)}</td>
-                  <td style="color:#27ae60">{fmt(sugg)}</td>
-                  <td style="color:#aaa">{item.get('reason','')}</td>
-                </tr>"""
+        # 阈值建议
+        if threshold_count > 0:
             threshold_html = f"""
             <h2 style="color:#aaa;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">
-              阈值优化建议（{len(threshold_items)} 条）
+              阈值优化建议（{threshold_count} 条待审批）
             </h2>
-            <table>
-              <thead><tr><th>指标</th><th>当前</th><th>建议</th><th>理由</th></tr></thead>
-              <tbody>{rows}</tbody>
-            </table>
+            <p style="color:#ccc">前往 <a href="http://localhost:8000/suggestions" style="color:#4a9eff">Web 审批界面</a> 查看详情并审批。</p>
             <div class="cli">采纳: python -m engine.threshold_optimizer --from-cache</div>"""
         else:
             threshold_html = "<p style='color:#555'>暂无阈值调整建议</p>"
 
         # 因果链建议
-        if chain_items:
-            rows = ""
-            for item in chain_items:
-                cause = item.get("cause", {})
-                effects = item.get("effects", [])
-                effects_str = " / ".join(f"{e.get('domain')}.{e.get('metric')}" for e in effects)
-                rows += f"""<tr>
-                  <td style="color:#4a9eff">{cause.get('domain')}.{cause.get('metric')}</td>
-                  <td style="color:#ccc">{effects_str}</td>
-                  <td style="color:#aaa">{item.get('description','')}</td>
-                </tr>"""
+        if chain_count > 0:
             chains_html = f"""
             <h2 style="color:#aaa;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 12px">
-              新因果链建议（{len(chain_items)} 条）
+              新因果链建议（{chain_count} 条待审批）
             </h2>
-            <table>
-              <thead><tr><th>根因指标</th><th>下游影响</th><th>描述</th></tr></thead>
-              <tbody>{rows}</tbody>
-            </table>
+            <p style="color:#ccc">前往 <a href="http://localhost:8000/suggestions" style="color:#4a9eff">Web 审批界面</a> 查看详情并审批。</p>
             <div class="cli">采纳: python -m engine.root_cause_analyzer --from-cache</div>"""
         else:
             chains_html = "<p style='color:#555;margin-top:24px'>暂无新因果链建议</p>"
 
         # 日志模式建议
-        _type_label = {"new_rule": "新建规则", "noise": "确认噪音"}
-        _type_color = {"new_rule": "#27ae60", "noise": "#f5a623"}
-        if log_items:
-            rows = ""
-            for item in log_items:
-                t = item.get("type", "")
-                label = _type_label.get(t, t)
-                color = _type_color.get(t, "#aaa")
-                rows += f"""<tr>
-                  <td style="color:{color}">{label}</td>
-                  <td style="color:#f5a623">{item.get('priority','')}</td>
-                  <td style="color:#ccc;font-size:11px">{item.get('term','')}</td>
-                  <td style="color:#aaa">{item.get('description','')}</td>
-                  <td style="color:#666">{item.get('reason','')}</td>
-                </tr>"""
+        if log_count > 0:
             log_html = f"""
             <h2 style="color:#aaa;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:24px 0 12px">
-              日志模式分析（{len(log_items)} 条待确认）
+              日志模式分析（{log_count} 条待审批）
             </h2>
-            <table>
-              <thead><tr><th>类型</th><th>优先级</th><th>模式</th><th>描述</th><th>理由</th></tr></thead>
-              <tbody>{rows}</tbody>
-            </table>
+            <p style="color:#ccc">前往 <a href="http://localhost:8000/suggestions" style="color:#4a9eff">Web 审批界面</a> 查看详情并审批。</p>
             <div class="cli">确认: python -m engine.log_analyzer --from-cache</div>"""
         else:
             log_html = "<p style='color:#555;margin-top:24px'>暂无日志模式待确认</p>"

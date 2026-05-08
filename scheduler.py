@@ -49,7 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-dashboard = MonitorDashboard(port=8080)
+dashboard = MonitorDashboard(port=0)
 
 
 def _run_monitor(domain: str, check_fn):
@@ -477,7 +477,7 @@ def main():
                       id="root_cause_analyzer", max_instances=1)
 
     dashboard.start()
-    logger.info("监控看板已启动: http://localhost:8080/monitor_dashboard.html")
+    logger.info("监控看板已初始化（HTML 由 FastAPI 服务器提供）")
 
     async def _run():
         scheduler.start()

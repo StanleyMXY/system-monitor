@@ -141,7 +141,7 @@ def _write_noise_rule_to_db(conn, row: dict, payload: dict) -> None:
             (
                 row["item_type"],
                 payload.get("description", ""),
-                _json.dumps(payload.get("suggested_phrases", []), ensure_ascii=False),
+                _json.dumps(payload.get("must_phrases", payload.get("suggested_phrases", [])), ensure_ascii=False),
                 payload.get("priority"),
                 _json.dumps(payload.get("suggested_phrases", []), ensure_ascii=False),
                 now,

@@ -61,10 +61,16 @@ def test_check_recharge_success_rate_calculation():
     assert sr.value == pytest.approx(0.80)
 
 
-def test_check_recharge_empty_returns_no_results():
+def test_check_recharge_empty_rows_triggers_no_data_alert():
     conn = make_conn([])
     results = check_recharge(conn, THRESHOLDS)
-    assert results == []
+    assert len(results) == 1
+    r = results[0]
+    assert r.domain == "payment"
+    assert r.metric == "recharge_success_rate"
+    assert r.value == 0.0
+    assert r.channel_id is None
+    assert r.extra["order_count"] == 0
 
 
 def test_check_channel_balance_returns_one_per_account():

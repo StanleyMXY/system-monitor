@@ -54,6 +54,14 @@ def check_recharge(conn, thresholds: dict) -> list[MetricResult]:
             value=float(row["pending_overdue"] or 0),
             channel_id=ch_id, extra=extra,
         ))
+
+    if not results:
+        # 采集窗口内无任何充值记录，触发无数据告警
+        return [MetricResult(
+            domain="payment", metric="recharge_success_rate",
+            value=0.0, channel_id=None,
+            extra={"channel_name": "全渠道", "order_count": 0},
+        )]
     return results
 
 

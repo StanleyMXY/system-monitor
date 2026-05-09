@@ -308,6 +308,30 @@ def _write_metric_history(rule_results: list) -> None:
         conn.close()
 
 
+def _write_heartbeat() -> None:
+    conn = get_monitor_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO scheduler_heartbeat (id, last_beat_at)
+                VALUES (1, NOW())
+                ON DUPLICATE KEY UPDATE last_beat_at = NOW()
+                """
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def job_heartbeat():
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _write_heartbeat)
+    except Exception as exc:
+        logger.error(f"[heartbeat] 心跳写入失败: {exc}")
+
+
 async def job_cleanup_metric_history():
     """删除 90 天前的历史指标数据。"""
     logger.info("[cleanup] 清理过期历史指标")
@@ -455,6 +479,11 @@ def main():
     scheduler.add_job(job_check_db_duplicate_error, "interval",
                       minutes=log_cfg["low_priority"]["check_interval_minutes"],
                       id="log_db_duplicate_error", max_instances=1)
+
+    # 心跳（每分钟）
+    scheduler.add_job(job_heartbeat, "interval",
+                      minutes=1,
+                      id="scheduler_heartbeat", max_instances=1)
 
     # 每日历史清理（凌晨 03:00）
     scheduler.add_job(job_cleanup_metric_history, "cron",

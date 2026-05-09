@@ -181,8 +181,8 @@ python -m engine.root_cause_analyzer --from-cache
 
 | 级别 | 含义 | 动作 |
 |---|---|---|
-| `critical` | 严重影响业务 | 写入 `monitor_action_queue` + 告警日志 |
-| `warning` | 需要关注 | 告警日志 |
+| `critical` | 严重影响业务 | 写入 `monitor_action_queue` + 告警日志 + TG 推送（含根因） |
+| `warning` | 需要关注 | 告警日志 + dashboard |
 | `ok` | 正常 | 无 |
 
 ---
@@ -193,7 +193,7 @@ python -m engine.root_cause_analyzer --from-cache
 python -m pytest tests/ -v
 ```
 
-当前通过 152 个测试用例。
+当前通过 158 个测试用例。
 
 ---
 

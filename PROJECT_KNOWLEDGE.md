@@ -6,9 +6,9 @@
 
 ## 1. 项目定位
 
-**天工平台实时系统监控**——对天工平台（tian-gong）生产库进行周期性 SQL 采集，经规则引擎评估后输出告警和动作队列，覆盖支付、游戏供应商、风控、活动、账户、系统操作六个域，常驻运行。
+**天工平台实时系统监控**——对天工平台（tian-gong）生产库进行周期性 SQL 采集，经规则引擎评估后输出告警和动作队列，覆盖支付、游戏供应商、风控、活动、账户、系统操作、日志七个域，常驻运行。AI 分析器（阈值优化器、日志分析器、根因分析器）定期离线分析，建议通过 Web 审批落地。
 
-**与 TG-Ads-Analysis 的关系：** TG-Ads-Analysis（兄弟项目）是离线分析系统，每日批跑 ETL + AI 日报，面向运营决策。本项目是其衍生独立系统，架构与之解耦（独立库、独立调度、独立告警），但继承了读写分库、APScheduler 异步调度、PyMySQL 技术栈等方法论。二者数据源不同：TG-Ads-Analysis 读取的是结构经过 ETL 整理的报表分析库，本系统直接读取 tian-gong 生产业务库。
+**与 TG-Ads-Analysis 的关系：** TG-Ads-Analysis（兄弟项目）是离线分析系统，每日批跑 ETL + AI 日报，面向运营决策。本项目是其衍生独立系统，架构与之解耦（独立库、独立调度、独立告警），但继承了读写分库、APScheduler 异步调度、PyMySQL 技术栈等方法论。
 
 ---
 
@@ -19,45 +19,75 @@ System Monitor/
 ├── config/
 │   ├── __init__.py
 │   ├── db.py                       # 数据库连接工厂（读写分库）
+│   ├── es.py                       # ES 连接工厂
 │   ├── thresholds_payment.json     # 支付域阈值配置
-│   ├── thresholds_game.json        # 游戏供应商域阈值配置
-│   ├── thresholds_risk.json        # 风控域阈值配置
-│   ├── thresholds_activity.json    # 活动域阈值配置
-│   ├── thresholds_account.json     # 用户账户域阈值配置
-│   └── thresholds_operation.json   # 系统操作域阈值配置
+│   ├── thresholds_game.json
+│   ├── thresholds_risk.json
+│   ├── thresholds_activity.json
+│   ├── thresholds_account.json
+│   ├── thresholds_operation.json
+│   ├── thresholds_log.json
+│   ├── noise_rules.json            # 已确认日志噪音规则（运行时加载）
+│   └── causal_chains.json          # 已知因果链配置（实时根因关联使用）
 │
 ├── engine/
 │   ├── __init__.py
 │   ├── models.py                   # 核心数据结构（MetricResult / RuleResult）
-│   ├── threshold_config.py         # 阈值 JSON 加载器
+│   ├── threshold_config.py         # 阈值 JSON 加载器 + METRIC_THRESHOLD_MAP
 │   ├── rule_engine.py              # 规则引擎（19 条规则，全域覆盖）
-│   └── alert_engine.py             # 告警引擎（日志 + logs/alerts.log）
+│   ├── alert_engine.py             # 告警引擎（日志 + logs/alerts.log）
+│   ├── correlation_engine.py       # 实时根因关联（per-alert，best-effort）
+│   ├── threshold_optimizer.py      # AI 阈值优化器（每周日 02:00）
+│   ├── log_analyzer.py             # AI 日志智能分析器（每天 04:00）
+│   ├── root_cause_analyzer.py      # AI 根因分析器（每天 05:00）
+│   └── suggestions_store.py        # monitor_suggestions 表读写
 │
 ├── monitor/
 │   ├── __init__.py
-│   ├── payment_monitor.py          # 支付域：充值/余额/提现采集
-│   ├── game_monitor.py             # 游戏供应商域：余额转账/对账采集
-│   ├── risk_monitor.py             # 风控域：预警积压/超时/黑名单采集
-│   ├── activity_monitor.py         # 活动域：兑换/首充采集
-│   ├── account_monitor.py          # 账户域：冻结余额增长率采集（in-memory）
-│   └── operation_monitor.py        # 系统操作域：VIP调整/余额调整/配置变更采集
+│   ├── payment_monitor.py
+│   ├── game_monitor.py
+│   ├── risk_monitor.py
+│   ├── activity_monitor.py
+│   ├── account_monitor.py
+│   ├── operation_monitor.py
+│   └── log_monitor.py              # ES 日志域采集
 │
 ├── executor/
 │   ├── __init__.py
 │   └── action_executor.py          # 执行层：写 tg_monitor.monitor_action_queue
 │
+├── api/
+│   ├── __init__.py
+│   ├── server.py                   # FastAPI app 入口（端口 8080）
+│   ├── routes/
+│   │   ├── __init__.py
+│   │   └── suggestions.py          # GET/POST /api/suggestions 路由
+│   └── actions/
+│       ├── __init__.py
+│       ├── threshold.py            # 采纳阈值建议：写 thresholds_*.json
+│       ├── noise.py                # 采纳噪音规则：写 noise_rules.json
+│       └── chain.py                # 采纳因果链：写 causal_chains.json
+│
 ├── dashboard/
 │   ├── __init__.py
-│   └── monitor_dashboard.py        # 实时看板（HTTP server + 动态 HTML）
+│   └── monitor_dashboard.py        # 看板 HTML 生成（scheduler 进程内，不含 HTTP）
+│
+├── db/
+│   ├── init_monitor.sql            # 建库 + 基础表
+│   ├── migrate_phase4.sql          # monitor_metric_history
+│   ├── migrate_log_analyzer.sql    # monitor_noise_rules
+│   ├── migrate_phase5.sql          # monitor_root_cause_reports
+│   └── migrate_suggestions.sql     # monitor_suggestions
 │
 ├── tests/
 │   ├── __init__.py
 │   ├── test_db.py
 │   ├── test_threshold_config.py
-│   ├── test_rule_engine.py         # Phase 1 规则测试
-│   ├── test_rule_engine_phase2.py  # Phase 2 规则测试
-│   ├── test_phase3_rules.py        # Phase 3 规则测试
+│   ├── test_rule_engine.py
+│   ├── test_rule_engine_phase2.py
+│   ├── test_phase3_rules.py
 │   ├── test_alert_engine.py
+│   ├── test_alert_engine_phase5.py
 │   ├── test_payment_monitor.py
 │   ├── test_game_monitor.py
 │   ├── test_risk_monitor.py
@@ -65,31 +95,53 @@ System Monitor/
 │   ├── test_account_monitor.py
 │   ├── test_operation_monitor.py
 │   ├── test_action_executor.py
-│   └── test_monitor_dashboard.py
+│   ├── test_log_monitor.py
+│   ├── test_log_rules.py
+│   ├── test_monitor_dashboard.py
+│   ├── test_threshold_optimizer.py
+│   ├── test_metric_history_writer.py
+│   ├── test_log_analyzer.py
+│   ├── test_correlation_engine.py
+│   ├── test_root_cause_analyzer.py
+│   ├── test_suggestions_store.py
+│   ├── test_api_actions.py
+│   └── test_api_suggestions.py
 │
 ├── docs/superpowers/
-│   ├── specs/2026-04-25-phase1-design.md
-│   ├── specs/2026-04-27-phase2-design.md
-│   ├── specs/2026-04-28-phase3-design.md
-│   ├── plans/2026-04-25-phase1-implementation.md
-│   ├── plans/2026-04-27-phase2-implementation.md
-│   └── plans/2026-04-28-phase3-implementation.md
+│   ├── specs/2026-05-08-suggestions-approval-design.md
+│   └── plans/2026-05-08-suggestions-approval.md
 │
 ├── output/
-│   └── monitor_dashboard.html      # 看板静态文件（运行时自动生成/更新）
+│   ├── monitor_dashboard.html      # 看板（scheduler 生成，api/server 服务）
+│   └── suggestions_detail.html    # 审批页（交互式，api/server 服务）
 │
 ├── logs/
 │   └── alerts.log                  # 结构化告警日志（JSON Lines）
 │
-├── scheduler.py                    # 主入口：APScheduler 常驻调度器
-├── smoke_test_phase3.py            # Phase 3 冒烟测试脚本（对接真实库）
+├── scheduler.py                    # 主入口：APScheduler 常驻调度器（不含 HTTP server）
 ├── .env                            # 本地环境变量（不入库）
 └── .env.example                    # 环境变量模板
 ```
 
 ---
 
-## 3. 数据库连接配置
+## 3. 启动方式
+
+```bash
+# 调度器（常驻，负责采集/告警/写 HTML，port=0 不启动 HTTP）
+python scheduler.py
+
+# API server（FastAPI，端口 8080，serve output/ 静态文件 + 审批 REST API）
+python -m api.server
+```
+
+看板：http://localhost:8080/monitor_dashboard.html  
+审批：http://localhost:8080/suggestions_detail.html  
+API 文档：http://localhost:8080/docs
+
+---
+
+## 4. 数据库连接配置
 
 读写分库，通过 `.env` 配置两组独立连接。
 
@@ -109,6 +161,15 @@ MONITOR_PORT=3306
 MONITOR_USER=your_user
 MONITOR_PASSWORD=your_password
 MONITOR_DATABASE=tg_monitor
+
+# ES
+ES_URL=http://8.212.158.149:9200
+ES_INDEX_PREFIX=q6          # 生产改为 swan
+
+# LLM（OpenAI 兼容接口）
+OPENAI_API_KEY=your_key
+OPENAI_BASE_URL=your_base_url
+LLM_MODEL=qwen3-max
 ```
 
 ### 连接工厂（config/db.py）
@@ -116,347 +177,238 @@ MONITOR_DATABASE=tg_monitor
 | 函数 | 库 | 用途 |
 |------|----|------|
 | `get_source_conn()` | `tian-gong`（只读） | Monitor 层 SQL 采集 |
-| `get_monitor_conn()` | `tg_monitor`（读写） | enqueue_action 写入队列 |
-
-分库原因：tian-gong 是生产库，监控写操作不得增加其压力；读写独立，单轮采集额外延迟 < 5ms。
+| `get_monitor_conn()` | `tg_monitor`（读写） | 队列/历史/建议写入 |
 
 ---
 
-## 4. 监控数据库表结构
-
-### 建库 SQL
-
-```sql
-CREATE DATABASE IF NOT EXISTS tg_monitor DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
+## 5. 监控数据库表结构
 
 ### monitor_action_queue（核心队列表）
 
-| 字段 | 类型 | 说明 |
+动作入队，等待人工审批（status=0→1/3，执行完成→2）。
+
+### monitor_metric_history（指标历史）
+
+每次采集后写入 value + level，90 天保留。阈值优化器的数据源。
+
+### monitor_noise_rules（噪音规则审计）
+
+日志分析器确认为噪音时写入，仅作审计，运行时过滤读 noise_rules.json。
+
+### monitor_root_cause_reports（根因报告）
+
+每日根因分析器写入一条 per-date 报告，`ON DUPLICATE KEY UPDATE` 幂等。
+
+### monitor_suggestions（建议审批表）
+
+AI 分析器建议的 per-item 状态记录。
+
+```sql
+CREATE TABLE monitor_suggestions (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  source        VARCHAR(32)  NOT NULL,   -- threshold_optimizer / log_analyzer / root_cause_analyzer
+  analysis_date DATE         NOT NULL,
+  item_type     VARCHAR(32)  NOT NULL,   -- adjust / noise / new_rule / new_chain
+  metric_key    VARCHAR(128) NULL,       -- 幂等键
+  payload       JSON         NOT NULL,   -- 完整建议内容
+  status        TINYINT      NOT NULL DEFAULT 0,  -- 0=待审批 1=已采纳 2=已拒绝
+  reviewed_at   BIGINT       NULL,
+  reviewed_by   VARCHAR(64)  NULL,
+  created_at    BIGINT       NOT NULL,
+  UNIQUE KEY uq_source_date_key (source, analysis_date, metric_key)
+);
+```
+
+---
+
+## 6. 建议审批系统
+
+### 数据流
+
+```
+AI 分析器（非交互模式）
+    ↓ insert_suggestions(rows)
+monitor_suggestions（DB）
+    ↓ GET /api/suggestions?status=0
+suggestions_detail.html（浏览器）
+    ↓ POST /api/suggestions/{id}/approve（含 overrides）
+api/routes/suggestions.py
+    ├── threshold_optimizer + adjust → api/actions/threshold.py → thresholds_{domain}.json
+    ├── log_analyzer + noise → api/actions/noise.py → noise_rules.json + monitor_noise_rules
+    ├── log_analyzer + new_rule → monitor_noise_rules（仅记录，待建规则）
+    └── root_cause_analyzer + new_chain → api/actions/chain.py → causal_chains.json
+```
+
+### 拒绝抑制
+
+分析器每次调用 LLM 前，从 DB 查询近期被拒绝的建议作为上下文：
+
+| 来源 | 抑制窗口 |
+|------|--------|
+| threshold_optimizer | 30 天 |
+| log_analyzer | 14 天 |
+| root_cause_analyzer | 30 天 |
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
 |------|------|------|
-| `id` | BIGINT AUTO_INCREMENT | 主键 |
-| `domain` | VARCHAR(32) | 监控域，如 `payment` |
-| `action_type` | VARCHAR(64) | 动作类型，如 `switch_channel` |
-| `target_id` | VARCHAR(64) NULL | 目标 ID（如渠道 ID） |
-| `payload` | JSON | 指标上下文（metric、value、extra） |
-| `status` | TINYINT | `0`=待审批 `1`=已批准 `2`=已执行 `3`=已拒绝 |
-| `priority` | TINYINT | `1`=紧急（critical） `2`=普通 `3`=低 |
-| `triggered_by` | VARCHAR(128) | 告警消息原文 |
-| `metric_value` | DECIMAL(18,4) NULL | 触发时的指标值 |
-| `threshold` | DECIMAL(18,4) NULL | 对应阈值 |
-| `operator` | VARCHAR(64) NULL | 审批操作人（写入时为 NULL） |
-| `approved_at` | BIGINT NULL | 审批时间（Unix 秒） |
-| `executed_at` | BIGINT NULL | 执行时间（Unix 秒） |
-| `created_at` | BIGINT NOT NULL | 创建时间（Unix 秒） |
-| `updated_at` | BIGINT NOT NULL | 更新时间（Unix 秒） |
-
-> **时间戳统一规则：** `monitor_action_queue` 使用 Unix 秒（`int(time.time())`）。源库各表时间戳格式不同，监控采集时一律换算为毫秒再传入 SQL（`* 1000`），`sys_operation_log` 例外，其 `created_at` 是 datetime 列，用 `FROM_UNIXTIME()` 转换。
+| GET | `/api/suggestions` | 查询建议列表，支持 `?status=&source=` |
+| POST | `/api/suggestions/{id}/approve` | 采纳，body 含可选 `overrides` |
+| POST | `/api/suggestions/{id}/reject` | 拒绝 |
 
 ---
 
-## 5. 六个监控域说明
+## 7. AI 分析器说明
 
-### 5.1 支付域（payment）
+### 阈值优化器（threshold_optimizer.py）
 
-**源库表：** `pay_recharge`、`pay_channel_account`、`pay_channel`、`pay_withdraw`
+- **触发：** 每周日 02:00（非交互），或手动 `python -m engine.threshold_optimizer`
+- **前提：** monitor_metric_history 中有 ≥ 7 天数据（≥ 100 条/指标）
+- **流程：** load_all_stats（30 天回溯） → 域级 LLM × 6（并行）→ 跨域综合 LLM × 1 → save_cache → insert_suggestions
+- **建议类型：** adjust（阈值调整）、keep（无需调整）、insufficient_data
 
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_recharge` | 各渠道充值，过去 1 小时 | 成功率 / 超时率 / 积压数 | `recharge.*` |
-| `check_channel_balance` | 所有渠道账号余额 | 当前余额（元） | `channel_account.balance_warning_amount` |
-| `check_withdraw_queue` | 提现审核积压（queue_timeout_hours 外未处理） | 积压数 | `withdraw.queue_count_warning` |
-| `check_withdraw_fail_rate` | 过去 1 小时提现失败率（status=4/已处理） | 失败率 | `withdraw.fail_rate_warning` |
+### 日志智能分析器（log_analyzer.py）
 
-**告警级别：** `recharge_success_rate < 0.60` → critical，其余 → warning
+- **触发：** 每天 04:00（非交互），或手动 `python -m engine.log_analyzer`
+- **流程：** ES significant_terms 聚合（24h，背景基线 7d）→ 噪音预过滤 → LLM 分类 → save_cache → insert_suggestions
+- **建议类型：** new_rule（新监控规则）、noise（确认为噪音）、watch（持续关注）
+- **`--agg-only`：** 仅 ES 聚合，不调 LLM；`--from-cache`：复用昨日 LLM 结果并走 CLI
 
----
+### 根因分析器（root_cause_analyzer.py）
 
-### 5.2 游戏供应商域（game）
+- **触发：** 每天 05:00，或手动 `python -m engine.root_cause_analyzer`
+- **前提：** 近 24h alerts.log 中有 ≥ 5 条告警
+- **流程：** 读 monitor_metric_history + alerts.log → LLM 单次分析 → save_cache → _save_report_to_db → insert_suggestions（suggested_new_chains）
+- **建议类型：** new_chain（建议新增因果链）
 
-**源库表：** `gam_balance_transfer`、`sys_manuf_reconciliation_daily`
+### 实时根因关联（correlation_engine.py）
 
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_balance_transfer` | 各供应商余额转账，过去 1 小时 | 失败率 / 重试异常订单数 | `balance_transfer.*` |
-| `check_reconciliation` | 各供应商对账差异，过去 7 天 | 连续差异天数（reconcile_status=2） | `reconciliation.diff_consecutive_days_critical` |
+每次告警后自动触发（在 alert_engine.handle 之后），best-effort：
 
-**说明：** 供应商维度用 `vendor_id / provider_code` 标识（非 manufacturer_id）。`check_reconciliation` 通过 cron 每日 02:00 单次执行。
-
----
-
-### 5.3 风控域（risk）
-
-**源库表：** `rsk_alert`、`rsk_event`、`rsk_blacklist`
-
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_alert_backlog` | 高危预警积压（alert_level≥3，handle_status=0） | 积压数 | `alert.high_risk_pending_warning`(10) |
-| `check_alert_timeout` | 高危预警超时未处理（超 high_risk_timeout_hours） | 超时数 | > 0 即告警 |
-| `check_event_backlog` | 高危风控事件积压（event_level=3，handle_status=0） | 积压数 | `event.high_risk_pending_warning`(5) |
-| `check_blacklist_expiry` | 临时黑名单即将到期（expire_type=2） | 到期数 | > 0 且在 expiry_reminder_hours 内 |
+1. 查 monitor_metric_history 近 30min 内其他域的 warning/critical 记录
+2. 匹配 config/causal_chains.json → confidence="known"
+3. 时序相近但未命中因果链 → confidence="suspected"
+4. 结果写入 alerts.log 每条记录的 `correlation` 字段
+5. DB 异常时降级为 none，不阻断告警
 
 ---
 
-### 5.4 活动域（activity）
+## 8. 调度器说明
 
-**源库表：** `act_activity_redemption`、`act_first_deposit_record`
+**入口文件：** `scheduler.py`（注意：已改为 `MonitorDashboard(port=0)`，不内置 HTTP server）  
+**运行方式：** `python scheduler.py`
 
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_redemption` | 活动兑换，窗口期内（check_interval_minutes） | 失败率 | `redemption.fail_rate_warning`(0.05) |
-| `check_first_deposit` | 首充记录，窗口期内 | 异常条目数 | `first_deposit.fail_alert_threshold`(1) |
+### 调度表
 
----
-
-### 5.5 用户账户域（account）
-
-**源库表：** `usr_account`
-
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_frozen_balance` | 全平台冻结余额 | 与上一轮比较的增长率 | `frozen_balance.growth_rate_warning`(0.50) |
-
-**特殊设计：** 采用 in-memory snapshot（模块级 `_prev_frozen` 变量）在相邻两次采集间计算增长率，无需数据库历史表。首次采集返回增长率 0 作为基准。
-
----
-
-### 5.6 系统操作域（operation）
-
-**源库表：** `adm_vip_adjust_log`、`pay_balance_adjustment`、`sys_operation_log`
-
-| 采集函数 | 监控对象 | 核心指标 | 阈值来源 |
-|----------|----------|----------|----------|
-| `check_vip_adjust` | 过去 1 小时 VIP 调整操作次数 | 次数 | `vip_adjust.batch_count_per_hour_warning`(20) |
-| `check_balance_adjustment` | 窗口期内大额余额调整（abs(amount)≥large_amount_threshold） | 笔数 | 大于等于 1 笔即 warning + enqueue |
-| `check_config_change` | 过去 1 小时 sys_operation_log 配置变更次数 | 次数 | `config_change.change_count_per_hour_warning`(10) |
-
-> `check_config_change` 使用 `FROM_UNIXTIME()` 处理 datetime 类型 `created_at`，与其他表的 ms 时间戳不同。
+| job id | 触发方式 | 频率/时间 |
+|--------|----------|-----------|
+| payment_recharge | interval | 5 分钟 |
+| payment_channel_balance | interval | 15 分钟 |
+| payment_withdraw_queue | interval | 15 分钟 |
+| payment_withdraw_fail_rate | interval | 60 分钟 |
+| game_balance_transfer | interval | 10 分钟 |
+| game_reconciliation | cron | 每日 02:00 |
+| risk_alert_backlog | interval | 10 分钟 |
+| risk_alert_timeout | interval | 30 分钟 |
+| risk_event_backlog | interval | 10 分钟 |
+| risk_blacklist_expiry | interval | 60 分钟 |
+| activity_redemption | interval | 15 分钟 |
+| activity_first_deposit | interval | 5 分钟 |
+| account_frozen_balance | interval | 60 分钟 |
+| operation_vip_adjust | interval | 60 分钟 |
+| operation_balance_adjustment | interval | 10 分钟 |
+| operation_config_change | interval | 60 分钟 |
+| log_* (5 条) | interval | 5-30 分钟 |
+| threshold_optimizer | cron | 每周日 02:00 |
+| log_analyzer | cron | 每天 04:00 |
+| root_cause_analyzer | cron | 每天 05:00 |
+| metric_history_writer | interval | 每次采集后 |
 
 ---
 
-## 6. 调度器说明
+## 9. 阈值配置体系
 
-**入口文件：** `scheduler.py`  
-**运行方式：** `python scheduler.py`（常驻进程）  
-**时区：** Asia/Shanghai  
-**框架：** `APScheduler AsyncIOScheduler` + `asyncio.run()`
+### METRIC_THRESHOLD_MAP（engine/threshold_config.py）
 
-每个 job 都是 `async` 函数，内部用 `asyncio.get_running_loop().run_in_executor(None, ...)` 将同步采集推入线程池，避免阻塞事件循环。
+将 metric 名称映射到 `(domain, sub_key, {role: json_key})` 三元组，供阈值优化器统计层和 API action handler 使用。公共化后可跨模块 import，不需要依赖 threshold_optimizer.py。
 
-### 全量调度表
+### 配置文件热重载
 
-| job id | 采集函数 | 触发方式 | 频率/时间 |
-|--------|----------|----------|-----------|
-| `payment_recharge` | `check_recharge` | interval | **5 分钟** |
-| `payment_channel_balance` | `check_channel_balance` | interval | 15 分钟 |
-| `payment_withdraw_queue` | `check_withdraw_queue` | interval | 15 分钟 |
-| `payment_withdraw_fail_rate` | `check_withdraw_fail_rate` | interval | 60 分钟 |
-| `game_balance_transfer` | `check_balance_transfer` | interval | 10 分钟 |
-| `game_reconciliation` | `check_reconciliation` | cron | **每日 02:00** |
-| `risk_alert_backlog` | `check_alert_backlog` | interval | 10 分钟 |
-| `risk_alert_timeout` | `check_alert_timeout` | interval | 30 分钟（固定） |
-| `risk_event_backlog` | `check_event_backlog` | interval | 10 分钟 |
-| `risk_blacklist_expiry` | `check_blacklist_expiry` | interval | 60 分钟 |
-| `activity_redemption` | `check_redemption` | interval | 15 分钟 |
-| `activity_first_deposit` | `check_first_deposit` | interval | 5 分钟 |
-| `account_frozen_balance` | `check_frozen_balance` | interval | 60 分钟 |
-| `operation_vip_adjust` | `check_vip_adjust` | interval | 60 分钟 |
-| `operation_balance_adjustment` | `check_balance_adjustment` | interval | 10 分钟 |
-| `operation_config_change` | `check_config_change` | interval | 60 分钟 |
-
-所有 interval 频率从对应域 JSON 的 `check_interval_minutes` 读取（`game_reconciliation` 和 `risk_alert_timeout` 除外，为硬编码 cron/固定值）。
+- `thresholds_*.json`：scheduler job 每次执行时调 `load_thresholds(domain)`，下一个 check cycle 自动生效
+- `noise_rules.json`：log_analyzer 每次运行时加载，每次分析生效
+- `causal_chains.json`：correlation_engine 每条告警触发时读取，写文件后下一告警生效
 
 ---
 
-## 7. 阈值配置文件体系
-
-### 文件结构
-
-每个域对应一个 JSON 文件，位于 `config/thresholds_{domain}.json`：
+## 10. 数据流全貌
 
 ```
-config/thresholds_payment.json
-config/thresholds_game.json
-config/thresholds_risk.json
-config/thresholds_activity.json
-config/thresholds_account.json
-config/thresholds_operation.json
-```
-
-### JSON 约定
-
-- 顶层 `_comment`（以 `_` 开头）为元信息，加载时自动过滤
-- 每个 sub-key 对应一个监控子类型（如 `recharge`、`withdraw`）
-- `check_interval_minutes` 是必需键，调度器从此读取触发频率
-- 单位约定写在 `_comment` 中（比率：0–1；金额：元；时间：分钟或小时）
-
-### 加载方式（engine/threshold_config.py）
-
-```python
-def load_thresholds(domain: str) -> dict:
-    path = CONFIG_DIR / f"thresholds_{domain}.json"
-    with open(path, encoding="utf-8") as f:
-        config = json.load(f)
-    return {k: v for k, v in config.items() if not k.startswith("_")}
-```
-
-调度器在启动时为每个域预加载一次，job 执行时也通过 `_run_monitor` 再次加载。
-
-### 各域关键阈值速查
-
-| 域 | 关键阈值 | 默认值 |
-|----|----------|--------|
-| payment | 充值成功率 critical | 60% |
-| payment | 充值成功率 warning | 80% |
-| payment | 渠道账号余额 warning | 10,000 元 |
-| payment | 提现积压 warning | 50 条 |
-| payment | 提现失败率 warning | 20% |
-| game | 转账失败率 warning | 5% |
-| game | 对账差异连续天数 critical | 2 天 |
-| risk | 高危预警积压 warning | 10 条 |
-| risk | 高危事件积压 warning | 5 条 |
-| activity | 兑换失败率 warning | 5% |
-| activity | 首充异常数 warning | ≥1 条 |
-| account | 冻结余额增长率 warning | 50% |
-| operation | VIP 批量调整 warning | 20 次/小时 |
-| operation | 大额余额调整 warning | ≥1 笔（单笔 ≥10,000 元） |
-| operation | 配置变更频率 warning | 10 次/小时 |
-
----
-
-## 8. 执行层设计
-
-### 数据流全貌
-
-```
-Monitor 采集层（SQL）
-    ↓  list[MetricResult]
+Monitor 采集层（SQL/ES）
+    ↓ list[MetricResult]
 规则引擎（rule_engine.evaluate）
-    ↓  list[RuleResult]（level / action）
-        ├── alert_engine.handle  → logs/alerts.log（所有 warning+）
-        ├── dashboard.update     → output/monitor_dashboard.html
+    ↓ list[RuleResult]（level / action）
+        ├── alert_engine.handle  → logs/alerts.log
+        │       └── correlation_engine  → alerts.log.correlation（best-effort）
+        ├── dashboard.update     → output/monitor_dashboard.html（scheduler 写）
         └── action_executor.enqueue → monitor_action_queue（仅 action="enqueue"）
+
+AI 分析器（离线，cron）
+    ↓ insert_suggestions
+monitor_suggestions（DB）
+    ↓ Web 审批（http://localhost:8080/suggestions_detail.html）
+    └── approve → action handler → thresholds_*.json / noise_rules.json / causal_chains.json
 ```
-
-### 自动执行 vs 人工审批边界
-
-| action 值 | 触发条件 | 写入队列 | 说明 |
-|-----------|----------|----------|------|
-| `none` | 指标正常（ok） | 否 | 无动作 |
-| `alert` | warning — 告警但无需动作 | 否 | 仅写日志和看板 |
-| `enqueue` | critical 或高风险 warning | **是** | status=0（待审批），等人工介入 |
-
-**当前触发 enqueue 的规则（共 4 条）：**
-- `recharge_success_rate` critical（< 60%）→ 切渠道候机
-- `game_reconciliation_diff_days` critical（≥ 2 天）→ 对账差异处理
-- `vip_adjust_count` warning（> 20 次/小时）→ 批量调整复查
-- `balance_adjustment_large_count` warning（≥1 笔）→ 大额调整确认
-
-人工审批后将 `status` 从 0 改为 1（批准）或 3（拒绝），执行完成后改为 2。
 
 ---
 
-## 9. 关键设计决策
-
-### 为什么独立部署而非嵌入 TG-Ads-Analysis？
-
-TG-Ads-Analysis 是异步批跑系统，每日执行一次，进程完成后退出。本系统是常驻轮询进程，需要 24/7 运行、每 5 分钟触发，生命周期完全不同。合并会使两个系统互相干扰（日报任务拖慢监控轮次，监控进程长期占用内存）。
+## 11. 关键设计决策
 
 ### 为什么规则引擎主导，而非 AI 实时判断？
 
-实时监控需要毫秒级确定性响应，AI 推理有延迟（通常 1–5 秒/次）且成本高。规则引擎对 19 条业务规则做硬编码阈值判断，延迟 < 1ms，可审计，误报来源可精确定位。AI 的角色在 Phase 4 中定位为**离线阈值优化器**：周期性分析历史告警数据，建议更新阈值，由运营人工确认后写回 JSON 文件——不参与实时决策路径。
+实时监控需要毫秒级确定性响应，AI 推理有延迟（通常 1–5 秒/次）且成本高。规则引擎对 19 条业务规则做硬编码阈值判断，延迟 < 1ms，可审计。AI 的角色是**离线优化者**：分析历史数据，建议更新配置，人工 Web 审批确认后写回——不参与实时决策路径。
 
-### AI 的角色定位
+### 为什么建议系统改为 FastAPI 独立进程？
 
-```
-AI（Phase 4，离线）
-  ↓ 分析 alerts.log + monitor_action_queue 历史
-  ↓ 建议阈值调整（如"渠道 A 的 success_rate_warning 应降至 0.75"）
-  ↓ 输出报告供人工审核
-  ↓ 人工确认 → 修改 thresholds_{domain}.json
-                       ↑ 规则引擎实时读取
-```
-
-规则引擎不依赖 AI，AI 不参与实时路径，两者完全解耦。
+- 职责分离：API 挂了不影响调度，调度挂了不影响 Web 审批
+- FastAPI 在 daemon 线程里运行有已知限制（信号、reload），独立进程更稳
+- DB 是两个进程唯一的共享状态，无需进程间通信
 
 ### 读写分库的必要性
 
-`tian-gong` 是 300+ 张表的生产业务库，任何 INSERT/UPDATE 都可能触发行锁或影响慢查询阈值。监控系统的读操作用只读账号，写动作（enqueue_action）落到独立的 `tg_monitor` 库，从源头杜绝监控影响业务。
+`tian-gong` 是 300+ 张表的生产业务库，任何 INSERT/UPDATE 都可能触发行锁。监控系统读操作用只读账号，写动作落到独立的 `tg_monitor` 库，从源头杜绝监控影响业务。
 
 ---
 
-## 10. 待完成事项（Phase 4）
-
-| 项目 | 描述 | 优先级 |
-|------|------|--------|
-| ES 日志接入 | xftapi 日志盲区（回调 IP 白名单拒绝、接口慢请求）需要通过 Elasticsearch 日志采集。ES 白名单待开通。接入后作为第 7 个监控域。 | P1 |
-| AI 阈值优化器 | `engine/threshold_optimizer.py`，定期分析 `logs/alerts.log` 和 `monitor_action_queue`，给出阈值调整建议报告。 | P2 |
-| Telegram 告警通知 | 在 `engine/alert_engine.py` 增加 TG Bot 推送（接口已预留），高危告警实时推送运营群。 | P2 |
-| 告警降噪 / 聚合 | 同一渠道/指标短期内重复告警合并，避免告警风暴。 | P3 |
-
----
-
-## 11. 常用命令速查
-
-### 启动监控调度器
+## 12. 常用命令速查
 
 ```bash
+# 启动调度器
 python scheduler.py
-# 看板访问地址：http://localhost:8080/monitor_dashboard.html
-```
 
-### 运行测试套件
+# 启动 API server（端口 8080）
+python -m api.server
 
-```bash
-# 全量（81 项）
-pytest tests/
+# 手动触发阈值优化（完整分析，建议写 DB）
+python -m engine.threshold_optimizer
 
-# 仅 Phase 3 规则
-pytest tests/test_phase3_rules.py -v
+# 手动触发日志分析（完整分析，建议写 DB）
+python -m engine.log_analyzer
 
-# 特定域
-pytest tests/test_payment_monitor.py -v
-```
+# 手动触发根因分析
+python -m engine.root_cause_analyzer
 
-### 冒烟测试（对接真实库）
+# 运行测试（当前 144 项）
+python -m pytest tests/ -v
 
-```bash
-python smoke_test_phase3.py
-```
-
-### 查看告警日志
-
-```bash
-# 查看最新 50 条告警（JSON Lines 格式）
+# 查看最新告警
 tail -n 50 logs/alerts.log
 
-# 过滤 critical
-grep '"level": "critical"' logs/alerts.log
-```
+# 查看待审批建议（DB）
+# SELECT * FROM monitor_suggestions WHERE status=0 ORDER BY created_at DESC;
 
-### 查看动作队列（待审批）
-
-```sql
--- 在 tg_monitor 库执行
-SELECT id, domain, action_type, triggered_by, metric_value, threshold, created_at
-FROM monitor_action_queue
-WHERE status = 0
-ORDER BY priority, created_at;
-```
-
-### 审批动作
-
-```sql
-UPDATE monitor_action_queue SET status = 1, operator = 'your_name', approved_at = UNIX_TIMESTAMP() WHERE id = ?;
--- 拒绝：status = 3
-```
-
-### 调整阈值（示例）
-
-```bash
-# 修改支付域充值成功率预警线为 75%
-# 编辑 config/thresholds_payment.json，将 success_rate_warning 改为 0.75
-# 调度器下一轮会自动读取新值（每次 _run_monitor 都重新 load_thresholds）
+# 查看待审批动作（DB）
+# SELECT id, domain, action_type, triggered_by FROM monitor_action_queue WHERE status=0;
 ```
 
 ---
@@ -466,17 +418,17 @@ UPDATE monitor_action_queue SET status = 1, operator = 'your_name', approved_at 
 ```python
 @dataclass
 class MetricResult:
-    domain: str          # "payment" | "game" | "risk" | "activity" | "account" | "operation"
-    metric: str          # 指标名，如 "recharge_success_rate"
-    value: float         # 当前指标值
-    channel_id: int | None = None  # 渠道/供应商 ID（无维度时为 None）
-    extra: dict = field(default_factory=dict)  # 附加上下文
+    domain: str
+    metric: str
+    value: float
+    channel_id: int | None = None
+    extra: dict = field(default_factory=dict)
 
 @dataclass
 class RuleResult:
     level: Literal["ok", "warning", "critical"]
     action: Literal["none", "alert", "enqueue"]
     metric: MetricResult
-    threshold: float     # 触发时对应的阈值
-    message: str         # 人类可读的告警说明
+    threshold: float
+    message: str
 ```

@@ -65,6 +65,98 @@ def test_notify_watchdog_alert_sends_when_enabled():
     assert "2026-01-01 00:00:00" in text
 
 
+# ── notify_critical_alert ───────────────────────────────────────────────────
+
+def _make_corr(confidence, cause_domain=None, cause_metric=None, lead_minutes=None):
+    from unittest.mock import MagicMock
+    cr = MagicMock()
+    cr.confidence = confidence
+    cr.cause_domain = cause_domain
+    cr.cause_metric = cause_metric
+    cr.lead_minutes = lead_minutes
+    return cr
+
+
+def test_notify_critical_alert_skips_when_disabled():
+    from notify import alerts
+    with patch.dict("os.environ", {"TG_NOTIFY_ENABLED": "false"}):
+        with patch("notify.alerts.send_alert") as mock_send:
+            alerts.notify_critical_alert("充值成功率严重低于阈值", _make_corr("none"))
+    mock_send.assert_not_called()
+
+
+def test_notify_critical_alert_sends_without_correlation():
+    from notify import alerts
+    with patch.dict("os.environ", {"TG_NOTIFY_ENABLED": "true"}):
+        with patch("notify.alerts.send_alert") as mock_send:
+            alerts.notify_critical_alert("充值成功率严重低于阈值", _make_corr("none"))
+    mock_send.assert_called_once()
+    assert "Critical" in mock_send.call_args[0][0]
+    assert "根因" not in mock_send.call_args[0][0]
+
+
+def test_notify_critical_alert_includes_known_correlation():
+    from notify import alerts
+    cr = _make_corr("known", "game", "game_transfer_fail_rate", lead_minutes=18.0)
+    with patch.dict("os.environ", {"TG_NOTIFY_ENABLED": "true"}):
+        with patch("notify.alerts.send_alert") as mock_send:
+            alerts.notify_critical_alert("充值成功率严重低于阈值", cr)
+    text = mock_send.call_args[0][0]
+    assert "已知根因" in text
+    assert "game.game_transfer_fail_rate" in text
+    assert "18" in text
+
+
+def test_notify_critical_alert_includes_suspected_correlation():
+    from notify import alerts
+    cr = _make_corr("suspected", "payment", "channel_balance", lead_minutes=5.0)
+    with patch.dict("os.environ", {"TG_NOTIFY_ENABLED": "true"}):
+        with patch("notify.alerts.send_alert") as mock_send:
+            alerts.notify_critical_alert("消息", cr)
+    text = mock_send.call_args[0][0]
+    assert "疑似根因" in text
+
+
+# ── alert_engine critical → TG ───────────────────────────────────────────────
+
+def test_alert_engine_calls_tg_on_critical(tmp_path):
+    from engine.models import MetricResult, RuleResult
+    from engine import alert_engine
+    import importlib
+    importlib.reload(alert_engine)
+    alert_engine.ALERT_LOG_PATH = tmp_path / "alerts.log"
+
+    metric = MetricResult(domain="payment", metric="recharge_success_rate", value=0.1)
+    result = RuleResult(level="critical", action="enqueue", metric=metric,
+                        threshold=0.6, message="充值成功率严重低于阈值")
+
+    with patch("engine.alert_engine.correlate") as mock_corr:
+        mock_corr.return_value = _make_corr("none")
+        with patch("notify.alerts.notify_critical_alert") as mock_notify:
+            alert_engine.handle(result)
+
+    mock_notify.assert_called_once()
+
+
+def test_alert_engine_does_not_call_tg_on_warning(tmp_path):
+    from engine.models import MetricResult, RuleResult
+    from engine import alert_engine
+    import importlib
+    importlib.reload(alert_engine)
+    alert_engine.ALERT_LOG_PATH = tmp_path / "alerts.log"
+
+    metric = MetricResult(domain="payment", metric="recharge_success_rate", value=0.7)
+    result = RuleResult(level="warning", action="alert", metric=metric,
+                        threshold=0.8, message="充值成功率低于预警线")
+
+    with patch("engine.alert_engine.correlate") as mock_corr:
+        mock_corr.return_value = _make_corr("none")
+        with patch("notify.alerts.notify_critical_alert") as mock_notify:
+            alert_engine.handle(result)
+
+    mock_notify.assert_not_called()
+
+
 # ── watchdog logic ──────────────────────────────────────────────────────────
 
 def _make_watchdog_conn(last_beat_at):

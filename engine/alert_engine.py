@@ -61,3 +61,10 @@ def handle(result: RuleResult) -> None:
     ALERT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(ALERT_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False, cls=_SafeEncoder) + "\n")
+
+    if result.level == "critical":
+        try:
+            from notify.alerts import notify_critical_alert
+            notify_critical_alert(result.message, cr)
+        except Exception as exc:
+            logger.warning(f"TG critical 告警发送失败（非致命）: {exc}")

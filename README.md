@@ -79,6 +79,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # 填写 SOURCE_*/MONITOR_* 数据库连接信息
 # 填写 ES_URL、OPENAI_API_KEY、OPENAI_BASE_URL（AI 功能需要）
+# 填写 TG_BOT_TOKEN、TG_ALERT_CHAT_IDS，并将 TG_NOTIFY_ENABLED 改为 true（TG 告警需要）
 ```
 
 ### 3. 初始化监控库
@@ -89,6 +90,7 @@ mysql -u <MONITOR_USER> -p tg_monitor < db/migrate_phase4.sql
 mysql -u <MONITOR_USER> -p tg_monitor < db/migrate_log_analyzer.sql
 mysql -u <MONITOR_USER> -p tg_monitor < db/migrate_phase5.sql
 mysql -u <MONITOR_USER> -p tg_monitor < db/migrate_suggestions.sql
+mysql -u <MONITOR_USER> -p tg_monitor < db/migrate_heartbeat.sql
 ```
 
 ### 4. 启动服务
@@ -103,6 +105,14 @@ python -m api.server
 
 看板地址：http://localhost:8080/monitor_dashboard.html  
 审批页面：http://localhost:8080/suggestions_detail.html
+
+### 5. 配置 Watchdog（可选）
+
+通过系统 cron 每 10 分钟检查调度器心跳，超过 10 分钟无心跳则发送 TG 告警：
+
+```bash
+*/10 * * * * cd /path/to/project && python -m scripts.watchdog >> logs/watchdog.log 2>&1
+```
 
 ---
 
@@ -163,6 +173,7 @@ python -m engine.root_cause_analyzer --from-cache
 | `monitor_noise_rules` | 已确认的噪音规则审计记录 |
 | `monitor_root_cause_reports` | 每日根因分析报告 |
 | `monitor_suggestions` | AI 分析器建议（per-item 审批状态） |
+| `scheduler_heartbeat` | 调度器心跳（单行），watchdog 检查存活用 |
 
 ---
 
@@ -182,7 +193,7 @@ python -m engine.root_cause_analyzer --from-cache
 python -m pytest tests/ -v
 ```
 
-当前通过 144 个测试用例。
+当前通过 152 个测试用例。
 
 ---
 

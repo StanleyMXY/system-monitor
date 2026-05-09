@@ -52,6 +52,14 @@ System Monitor/
 │   ├── operation_monitor.py
 │   └── log_monitor.py              # ES 日志域采集
 │
+├── notify/
+│   ├── __init__.py
+│   ├── tg_client.py                # TG Bot API 底层（send_alert）
+│   └── alerts.py                   # 业务告警封装（notify_watchdog_alert）
+│
+├── scripts/
+│   └── watchdog.py                 # 心跳看门狗，系统 cron 每 10 分钟调用
+│
 ├── executor/
 │   ├── __init__.py
 │   └── action_executor.py          # 执行层：写 tg_monitor.monitor_action_queue
@@ -77,7 +85,8 @@ System Monitor/
 │   ├── migrate_phase4.sql          # monitor_metric_history
 │   ├── migrate_log_analyzer.sql    # monitor_noise_rules
 │   ├── migrate_phase5.sql          # monitor_root_cause_reports
-│   └── migrate_suggestions.sql     # monitor_suggestions
+│   ├── migrate_suggestions.sql     # monitor_suggestions
+│   └── migrate_heartbeat.sql       # scheduler_heartbeat（心跳表）
 │
 ├── tests/
 │   ├── __init__.py
@@ -198,6 +207,10 @@ LLM_MODEL=qwen3-max
 ### monitor_root_cause_reports（根因报告）
 
 每日根因分析器写入一条 per-date 报告，`ON DUPLICATE KEY UPDATE` 幂等。
+
+### scheduler_heartbeat（调度器心跳）
+
+单行表（id=1 固定），`scheduler.py` 每分钟 UPSERT `last_beat_at`。`scripts/watchdog.py` 通过系统 cron 每 10 分钟检查，超期发 TG 告警。
 
 ### monitor_suggestions（建议审批表）
 
@@ -320,6 +333,7 @@ api/routes/suggestions.py
 | operation_balance_adjustment | interval | 10 分钟 |
 | operation_config_change | interval | 60 分钟 |
 | log_* (5 条) | interval | 5-30 分钟 |
+| scheduler_heartbeat | interval | 每分钟 |
 | threshold_optimizer | cron | 每周日 02:00 |
 | log_analyzer | cron | 每天 04:00 |
 | root_cause_analyzer | cron | 每天 05:00 |
